@@ -16,6 +16,9 @@ def scan_ip(target: str, port_range: tuple[int, int]) -> list[int]:
 
     return openPorts
 
+def identify (open_ports: list[int])->None: 
+    
+
 def pretty_print_scan(open_ports: list[int]) -> None:
     print(f"{'PORT':<10} {'SERVICE'}")
     print("-" * 25)

