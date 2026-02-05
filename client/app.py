@@ -22,7 +22,7 @@ def add_command(cmd_name, func, docstring, cmd):
 
 class CustomCommand(Cmd):
 
-    def parse_args(provided_args, expected_args=""):
+    def parse_args(self, provided_args, expected_args=""):
         return provided_args.split(" ")
 
     def __init__(self):
@@ -34,7 +34,8 @@ class CustomCommand(Cmd):
 if __name__ == "__main__":
     all_commands = commands.__all__
     for command in all_commands:
-        module: commands.Command = importlib.import_module(
+        # module:
+        module = importlib.import_module(
             f"{PROJECT_NAME}.commands.{command}"
         ).command
         # Add the command function to MyCmd class
