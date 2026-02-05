@@ -13,11 +13,18 @@ def scan_ip(target: str, port_range: tuple[int, int]) -> list[int]:
             openPorts.append(i)
 
         s.close()
-
+    identify(target, openPorts)
     return openPorts
 
-def identify (open_ports: list[int])->None: 
-    
+def identify (target: str, open_ports: list[int])->None: 
+    for port in open_ports:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.settimeout(1)
+        client_socket.connect((target, port))
+        response = client_socket.recv(2048)
+        if response:
+            print( "Data received from server -->\n", response.decode()) # Decode bytes to string before printing
+        client_socket.close()
 
 def pretty_print_scan(open_ports: list[int]) -> None:
     print(f"{'PORT':<10} {'SERVICE'}")
