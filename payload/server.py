@@ -118,17 +118,17 @@ def handle_conn(conn, addr):
         # Command 1: Privilege Escalation
         if data == "privesc":
             print("Running privesc")
-            privesc() # This will prompt for password and restart script as root 
-            
-        # Command 2: Verification
-        # "" suggests implementing a "whoami" command to verify root access
-        elif data == "whoami":
-            try:
-                # Run whoami and send the result back to the client
-                output = run_command("whoami").stdout
-                conn.sendall(output.encode())
-            except Exception as e:
-                conn.sendall(f"error: {e}".encode())
+            privesc()
+        
+
+        # Think VERY carefully about how you will communicate between the client and server
+        # You will need to make a custom protocol to transfer commands
+
+        try:
+            conn.sendall(run_command("whoami").stdout.encode())
+            # Process the communication data from 
+        except Exception as e:
+            conn.sendall(f"error: {e}".encode())
 
         #stuff I added -- END
 
