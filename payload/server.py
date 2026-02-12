@@ -51,7 +51,7 @@ def privesc():
 def kill_others():
     """
     Since a port can only be bound by one program, kill all other programs on this port that we can see.
-    This makes it so if we run our script multiple times, only the most up-to-date/priviledged one will be running in the end
+    This makes it so if we run our script multiple times, only the most up-to-date/privileged one will be running in the end
     """
     # check if privilege escalated
     # if os.geteuid() == 0:

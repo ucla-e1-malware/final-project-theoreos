@@ -6,7 +6,8 @@ __all__ = [
     "send_data",
     "brick",
     "scan",
-    "phish"
+    "phish",
+    "send_to_payload"
 ]
 
 
