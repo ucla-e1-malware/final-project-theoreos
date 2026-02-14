@@ -17,6 +17,7 @@ import io
 
 THIS_FILE = os.path.realpath(__file__)
 
+# Internal use only - if you need to run commands, call subprocess.Popen directly instead 
 def run_command(cmd, shell=True, capture_output=True, **kwargs):
     return subprocess.run(
         cmd,
