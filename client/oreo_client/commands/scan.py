@@ -57,7 +57,7 @@ def get_banner(target: str, port: int) -> str:
         
     return "Unknown Service"
 
-def pretty_print_scan(open_ports: list[int], target_ip: str = "", do_service_scan: bool = False) -> None:
+def pretty_print_scan(open_ports: list[int], target_ip: str = None, do_service_scan: bool = False) -> None:
     print(f"{'PORT':<10} {'SERVICE':<20} {'VERSION' if do_service_scan else ''}")
     print("-" * 60)
 
