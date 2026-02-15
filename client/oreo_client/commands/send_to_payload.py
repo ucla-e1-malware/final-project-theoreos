@@ -6,9 +6,12 @@ import socket
 
 
 def process_lines(lines: str):
-    dst_ip = ... # TODO - should be str
-    dst_port = ... # TODO - should be int
-    data_to_send = "hello, world!" # TODO
+    parts = lines.split()
+
+    dst_ip = parts[0] # TODO - should be str
+    dst_port = int(parts[1]) # TODO - should be int
+    data_to_send = " ".join(parts[2:])
+    # data_to_send = "hello, world!" # TODO
 
     # Connect to server
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
