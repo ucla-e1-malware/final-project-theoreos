@@ -7,7 +7,8 @@ __all__ = [
     "brick",
     "scan",
     "phish",
-    "send_to_payload"
+    "send_to_payload",
+    "ftp_enum"
 ]
 
 
