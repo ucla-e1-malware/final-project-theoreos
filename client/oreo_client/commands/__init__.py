@@ -8,7 +8,8 @@ __all__ = [
     "scan",
     "phish",
     "send_to_payload",
-    "ftp_enum"
+    "ftp_enum",
+    "cred_bash"
 ]
 
 
