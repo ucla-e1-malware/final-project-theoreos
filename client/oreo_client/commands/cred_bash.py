@@ -43,15 +43,15 @@ class PasswordBash(Command):
         # 1. Parse the options from the user input
 
         parts = lines.split()
-        if len(parts) < 4:
+        if len(parts) < 2:
             print("Error: Missing arguments.")
             print("Usage: password_bash <target> <service> <user_list> <pass_list>")
             return
 
         target = parts[0]
         service = parts[1]
-        user_list = parts[2]
-        pass_list = parts[3]
+        # user_list = parts[2]
+        # pass_list = parts[3]
 
         if not self.check_and_install_patator(): # check if package installed
             return
@@ -61,6 +61,8 @@ class PasswordBash(Command):
         # 2. Construct the command list
         # We use a list rather than a single string to avoid shell injection vulnerabilities
         # if the user inputs something unexpected like "target.com; rm -rf /"
+        user_list = "userlist.txt" 
+        pass_list = "passwords.txt"  
 
         audit_command = [
             "patator",
