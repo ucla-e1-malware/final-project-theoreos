@@ -1,6 +1,9 @@
 from ..commands import Command
 import ftplib
 
+# to use do
+# ftp_enum e1-target.local
+
 class FtpEnum(Command):
     """
     Attempt an anonymous FTP login and search for sensitive files.

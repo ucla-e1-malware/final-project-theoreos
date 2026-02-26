@@ -1,59 +1,70 @@
 from ..commands import Command
-import shlex
 import subprocess
 import shutil
+import os
 
-
+# to use just do 
+# cred_bash e1-target.local ftp
 class PasswordBash(Command):
     """
-    Conceptual wrapper for an external password auditing tool.
-    Usage: password_bash <target> <service> <user_list> <pass_list>
+    Usage: cred_bash <target> <service>
+    Example: cred_bash e1-target.local ftp
     """
-
-    def check_and_install_patator(self):
-        # 1. Check if it exists in the system PATH
-        if shutil.which("patator") is not None:
-            print("[+] 'patator' is installed and ready to use.")
+    def check_and_install_hydra(self):
+        # 1. Check if hydra is in the system PATH
+        if shutil.which("hydra") is not None:
             return True
 
-        # 2. If not found, warn the user and prompt for installation
-        print("[-] Error: 'patator' is not installed.")
+        # 2. Prompt for installation if missing
+        print("[-] Error: 'hydra' is not installed.")
         choice = input("[?] Would you like to install it now via apt? (y/n): ").strip().lower()
 
         if choice == 'y':
-            print("[*] Attempting to install 'patator'...")
+            print("[*] Attempting to install 'hydra'...")
             try:
-                # 3. Execute the installation command
-                # Using 'sudo' might prompt the user to type their password in the terminal
-                # The '-y' flag tells apt to automatically answer "yes" to confirmation prompts
-                subprocess.run(["sudo", "apt", "install", "-y", "patator"], check=True)
-                
+                subprocess.run(["sudo", "apt", "update"], check=True)
+                subprocess.run(["sudo", "apt", "install", "-y", "hydra"], check=True)
                 print("[+] Installation successful!")
                 return True
-                
             except subprocess.CalledProcessError:
-                # This triggers if the apt command fails (e.g., bad package name or no internet)
-                print("[-] Installation failed. Please install 'patator' manually.")
+                print("[-] Installation failed. Please run 'sudo apt install hydra' manually.")
                 return False
-        else:
-            print("[-] Cannot proceed with this command without 'patator'.")
-            return False
+        return False
 
     def do_command(self, lines: str, *args):
-        # 1. Parse the options from the user input
+        def check_hydra():
+            if shutil.which("hydra") is not None:
+                return True
+            print("[-] Error: 'hydra' is not installed.")
+            choice = input("[?] Install via apt? (y/n): ").strip().lower()
+            if choice == 'y':
+                try:
+                    subprocess.run(["sudo", "apt", "update"], check=True)
+                    subprocess.run(["sudo", "apt", "install", "-y", "hydra"], check=True)
+                    return True
+                except: return False
+            return False
 
+        # 1. Parse the options from the user input
         parts = lines.split()
         if len(parts) < 2:
             print("Error: Missing arguments.")
             print("Usage: password_bash <target> <service> <user_list> <pass_list>")
             return
 
+        if not check_hydra():
+            return
+
         target = parts[0]
-        service = parts[1]
+        service = parts[1].lower()
         # user_list = parts[2]
         # pass_list = parts[3]
+        user_list = "oreo_client/commands/usernames.txt" #change these two lines to paths of relevant files
+        pass_list = "oreo_client/commands/passwords.txt"  
 
-        if not self.check_and_install_patator(): # check if package installed
+        # Check if the files actually exist before running to avoid Hydra errors
+        if not os.path.exists(user_list) or not os.path.exists(pass_list):
+            print(f"[-] Error: Ensure '{user_list}' and '{pass_list}' exist in this directory.")
             return
 
         print(f"[*] Preparing to audit {service} on {target}...")
@@ -61,45 +72,33 @@ class PasswordBash(Command):
         # 2. Construct the command list
         # We use a list rather than a single string to avoid shell injection vulnerabilities
         # if the user inputs something unexpected like "target.com; rm -rf /"
-        user_list = "userlist.txt" 
-        pass_list = "passwords.txt"  
 
+       # Updated audit_command using Hydra
         audit_command = [
-            "patator",
-            f"{service}_login",                      # Service specific command (e.g., ftp_login or ssh_login)
-            "host=" + target,                        # Target URI
-            "user=" + user_list,                    # Username list
-            "password=" + pass_list,                # Password list
-            "-x", "ignore:10"                       # Allow up to 10 ignored failures
-        ]  # patator ftp_login host=e1-target.local user=usernames.txt password=rockyou.txt -x ignore:10
+            "hydra",
+            "-I", #skip 10s wait from previous restore file
+            "-q", #supresses starting info. "quiet mode"
+            "-L", user_list,        # -L for a file containing users
+            "-P", pass_list,        # -P for a file containing passwords
+            "-f",                   # Exit when the first valid pair is found
+            "-V",                   # Verbose (show attempts)
+            f"{target}",            # Target IP/Hostname
+            f"{service}"            # Service name (e.g., "ftp" or "ssh")
+        ]
 
-
-        print(f"[*] Abstract command constructed: {' '.join(audit_command)}")
+        print(f"[*] Running command: {' '.join(audit_command)}")
 
         try:
-            # This is the line that actually runs the tool in the terminal
-            result = subprocess.run(
-                audit_command, 
-                capture_output=True,  # Tells Python to grab what the tool prints
-                text=True,            # Decodes the output from bytes into a normal string
-                check=False           # Prevents Python from crashing if patator fails/errors out
-            )
-        
-            # Print the standard output (what the tool successfully did)
-            if result.stdout:
-                print("[+] patator Output:\n")
-                print(result.stdout)
+            # Run the tool and stream output directly to the terminal
+            # This is better for Hydra so you can see the progress live
+            result = subprocess.run(audit_command, check=False)
             
-            # Print the standard error (if the tool complained about something)
-            if result.stderr:
-                print("[-] patator reported errors:\n")
-                print(result.stderr)
-            
-        except FileNotFoundError:
-            # This happens if the OS literally can't find the "patator" program installed
-            print("[-] Error: The 'patator' tool is not installed or not in your system's PATH.")
+            if result.returncode == 0:
+                print("\n[+] Audit completed successfully.")
+            else:
+                print(f"\n[!] Hydra finished with exit code {result.returncode}")
+
         except Exception as e:
-            # Catch-all for any other weird OS-level errors
             print(f"[-] An unexpected error occurred: {e}")
 
 command = PasswordBash
