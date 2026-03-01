@@ -6,6 +6,8 @@ APP_PATH=$(pwd)
 # 2. Make the script executable
 chmod +x "$APP_PATH/game.py"
 
+EXEC_CMD="sh -c 'zenity --info --text=\"Game Loading...\" --title=\"Among Us\" --timeout=2 & python3 $GAME_FILE'"
+
 # 3. Create the .desktop file dynamically
 echo "[Desktop Entry]
 Version=1.0
