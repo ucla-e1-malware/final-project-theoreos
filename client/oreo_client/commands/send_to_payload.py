@@ -20,10 +20,12 @@ def process_lines(lines: str):
     # Send data to server and print response
     client_socket.send(data_to_send.encode())
     response = client_socket.recv(2048) # Can call multiple times to get more data
-    print(
-        "Data received from server -->\n", response.decode()
-    )  # Decode bytes to string before printing
-
+    try: 
+        print(
+            "Data received from server -->\n", response.decode()
+        )  # Decode bytes to string before printing
+    except UnicodeDecodeError:
+        print(f"[binary output - {len(response)} bytes]")
     # Close socket
     client_socket.close()
 
