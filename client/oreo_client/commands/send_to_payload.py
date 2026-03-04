@@ -3,10 +3,30 @@
 
 from ..commands import Command
 import socket
+import struct
+
+
+# Added for multiline
+
+def send_framed(sock, data: bytes):
+    sock.sendall(struct.pack(">I", len(data)) + data)
+
+def recv_framed(sock):
+    header = b""
+    while len(header) < 4:
+        header += sock.recv(4 - len(header))
+    msg_len = struct.unpack(">I", header)[0]
+    data = b""
+    while len(data) < msg_len:
+        data += sock.recv(msg_len - len(data)) 
+    return data
+
+
 
 
 def process_lines(lines: str):
-    parts = lines.split()
+    # parts = lines.split()
+    parts = lines.split(None, 2)
 
     dst_ip = parts[0] # TODO - should be str
     dst_port = int(parts[1]) # TODO - should be int
@@ -18,8 +38,11 @@ def process_lines(lines: str):
     client_socket.connect((dst_ip, dst_port))
 
     # Send data to server and print response
-    client_socket.send(data_to_send.encode())
-    response = client_socket.recv(2048) # Can call multiple times to get more data
+    # client_socket.send(data_to_send.encode())
+    # response = client_socket.recv(2048) # Can call multiple times to get more data
+    #ADDED
+    send_framed(client_socket, data_to_send.replace("\\n", "\n").encode())  # sends length then data
+    response = recv_framed(client_socket)
     try: 
         print(
             "Data received from server -->\n", response.decode()

