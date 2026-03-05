@@ -4,7 +4,15 @@ from abc import ABC
 __all__ = [
     "exit",
     "send_data",
-    "brick"
+    "brick",
+    "scan",
+    "phish",
+    "send_to_payload",
+    "ftp_enum",
+    "cred_bash",
+    "privesc1",
+    "privesc2"
+    "play_audio"
 ]
 
 
