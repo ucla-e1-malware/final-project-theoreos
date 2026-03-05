@@ -92,7 +92,8 @@ class PasswordBash(Command):
             for line in iter(process.stdout.readline, ''):
                 print(line, end='')
                 output += line
-            process.stdout.close()
+            if process.stdout:
+                process.stdout.close()
             process.wait()
 
             if process.returncode == 0:

