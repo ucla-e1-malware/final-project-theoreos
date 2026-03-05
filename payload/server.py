@@ -187,18 +187,23 @@ def handle_conn(conn, addr):
                 
             
             elif command_type == "BASH":
-                # result= run_command(command_body)
-                # output = result.stdout + result.stderr
-                # # conn.sendall(output.encode("utf-8", errors="replace"))
-                # send_framed(conn, output if output else b"[no output]")
-                if os.geteuid() == 0:
-                    command_body = f"/bin/bash -p -c {subprocess.list2cmdline([command_body])}"
+                print(f"Running bash: {command_body}")
                 
-                proc = subprocess.run(command_body, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # If we are root, we explicitly call bash -p to maintain privileges
+                if os.geteuid() == 0:
+                    exec_args = ["/bin/bash", "-p", "-c", command_body]
+                else:
+                    exec_args = ["/bin/sh", "-c", command_body]
+
+                # Run the command directly (shell=False) to prevent /bin/sh from dropping UID
+                proc = subprocess.run(
+                    exec_args, 
+                    shell=False, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE
+                )
+                
                 output = proc.stdout + proc.stderr
-                send_framed(conn, output if output else b"[no output]")
-                proc = subprocess.run(command_body, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                output = proc.stdout + proc.stderr  # both are bytes now, not strings
                 send_framed(conn, output if output else b"[no output]")
             else: 
                 # conn.sendall(f"Unknown command: {command_type}".encode())
