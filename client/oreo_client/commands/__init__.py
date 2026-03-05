@@ -10,7 +10,8 @@ __all__ = [
     "send_to_payload",
     "ftp_enum",
     "cred_bash",
-    "auto_privesc"
+    "privesc1",
+    "privesc2"
 ]
 
 
