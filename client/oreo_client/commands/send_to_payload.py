@@ -22,8 +22,6 @@ def recv_framed(sock):
     return data
 
 
-
-
 def process_lines(lines: str):
     # parts = lines.split()
     parts = lines.split(None, 2)

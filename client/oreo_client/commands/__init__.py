@@ -12,6 +12,7 @@ __all__ = [
     "cred_bash",
     "privesc1",
     "privesc2"
+    "play_audio"
 ]
 
 
