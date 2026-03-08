@@ -41,12 +41,20 @@ def process_lines(lines: str):
     #ADDED
     send_framed(client_socket, data_to_send.replace("\\n", "\n").encode())  # sends length then data
     response = recv_framed(client_socket)
-    try: 
-        print(
-            "Data received from server -->\n", response.decode()
-        )  # Decode bytes to string before printing
-    except UnicodeDecodeError:
-        print(f"[binary output - {len(response)} bytes]")
+    if response.startswith(b"TEXT\n"):
+        print("Data received from server -->\n", response[5:].decode())
+    elif response.startswith(b"FILE\n"):
+        import time
+        content = response[5:]
+        filename = f"screenshot_{int(time.time())}.png"
+        with open(filename, "wb") as f:
+            f.write(content)
+        print(f"Saved file as {filename}")
+        import subprocess
+        subprocess.run(["feh", filename], stderr=subprocess.DEVNULL)
+        
+    else:
+        print(f"[unknown response - {len(response)} bytes]")
     # Close socket
     client_socket.close()
 

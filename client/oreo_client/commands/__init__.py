@@ -11,8 +11,9 @@ __all__ = [
     "ftp_enum",
     "cred_bash",
     "privesc1",
-    "privesc2"
-    "play_audio"
+    "privesc2",
+    "play_audio",
+    "click"
 ]
 
 

