@@ -60,9 +60,35 @@ def take_photo(path="photo.jpg", camera_index=0):
 
 # audio 
 
+# def play_audio_from_url(url):
+#     import requests, tempfile, subprocess, os, pwd
+#     r = requests.get(url, timeout=10)
+#     r.raise_for_status()
+#     suffix = os.path.splitext(url.split("?")[0])[1] or ".bin"
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+#         f.write(r.content)
+#         path = f.name
+#         print(f"File downloaded to: {path}")
 
-def play_audio_from_url(url):
-    import requests, tempfile, subprocess, os
+#     os.chmod(path, 0o644)
+#     original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+#     uid = pwd.getpwnam(original_user).pw_uid
+#     xdg = f"/run/user/{uid}"
+
+#     subprocess.run(
+#     ["sudo", "-u", original_user,
+#      "env",
+#      f"XDG_RUNTIME_DIR={xdg}",
+#      f"PIPEWIRE_RUNTIME_DIR={xdg}",
+#      "ffplay", "-nodisp", "-autoexit", path],
+#     stdout=subprocess.DEVNULL,
+#     stderr=subprocess.DEVNULL,
+#     )
+
+#     os.unlink(path)
+
+def play_audio_from_url(url): # Used Claude for finguring out how to make it work with SUDO 
+    import requests, tempfile, subprocess, os, pwd
     r = requests.get(url, timeout=10)
     r.raise_for_status()
     suffix = os.path.splitext(url.split("?")[0])[1] or ".bin"
@@ -70,28 +96,98 @@ def play_audio_from_url(url):
         f.write(r.content)
         path = f.name
         print(f"File downloaded to: {path}")
-    subprocess.run(
-        ["ffplay", "-nodisp", "-autoexit", path],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    os.unlink(path)
+
+    os.chmod(path, 0o644)
+    original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    uid = pwd.getpwnam(original_user).pw_uid
+    xdg = f"/run/user/{uid}"
+
+    try:
+        result = subprocess.run(
+            ["sudo", "-u", original_user,
+             "env",
+             f"XDG_RUNTIME_DIR={xdg}",
+             f"PIPEWIRE_RUNTIME_DIR={xdg}",
+             "ffplay", "-nodisp", "-autoexit", path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            print(f"Audio playback failed: {result.stderr.decode().strip()}")
+    except Exception as e:
+        print(f"Audio playback error: {e}")
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
 
 # screenshot 
 
-def screenshot():
-    import time
-    import subprocess
-    import os
+
+
+# def screenshot(): # Used Claude for finguring out how to make it work with SUDO 
+#     import time, subprocess, os, pwd
+
+#     original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+#     uid = pwd.getpwnam(original_user).pw_uid
+#     xdg = f"/run/user/{uid}"
+#     try:
+#         sockets = [f for f in os.listdir(xdg) if f.startswith("wayland-")]
+#         wayland = sockets[0] if sockets else "wayland-0"
+#     except FileNotFoundError:
+#         wayland = "wayland-0"
+
+#     filename = f"/tmp/screenshot_{int(time.time())}.png"
+#     result = subprocess.run(
+#         ["sudo", "-u", original_user,
+#          "env",
+#          f"WAYLAND_DISPLAY={wayland}",
+#          f"XDG_RUNTIME_DIR={xdg}",
+#          "gnome-screenshot", "-f", filename],
+#         capture_output=True, text=True
+#     )
+#     if result.returncode != 0:
+#         raise RuntimeError(f"gnome-screenshot failed: {result.stderr}")
+#     if not os.path.exists(filename):
+#         raise RuntimeError("Screenshot file was not created")
+#     return filename
+    
+
+def screenshot(): # Used Claude for finguring out how to make it work with SUDO 
+    import time, subprocess, os, pwd
+
+    original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    uid = pwd.getpwnam(original_user).pw_uid
+    xdg = f"/run/user/{uid}"
+
+    try:
+        sockets = [f for f in os.listdir(xdg) if f.startswith("wayland-")]
+        wayland = sockets[0] if sockets else "wayland-0"
+    except FileNotFoundError:
+        wayland = "wayland-0"
 
     filename = f"/tmp/screenshot_{int(time.time())}.png"
-    result = subprocess.run(["gnome-screenshot", "-f", filename], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"gnome-screenshot failed: {result.stderr}")
-    if not os.path.exists(filename):
-        raise RuntimeError("Screenshot file was not created")
-    return filename
-    
+    try:
+        result = subprocess.run(
+            ["sudo", "-u", original_user,
+             "env",
+             f"WAYLAND_DISPLAY={wayland}",
+             f"XDG_RUNTIME_DIR={xdg}",
+             "gnome-screenshot", "-f", filename],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"gnome-screenshot failed: {result.stderr.strip()}")
+            return None
+        if not os.path.exists(filename):
+            print("Screenshot file was not created")
+            return None
+        return filename
+    except Exception as e:
+        print(f"Screenshot error: {e}")
+        return None
+
+
 def run_command(cmd, shell=True, capture_output=True, **kwargs):
     return subprocess.run(
         cmd,
@@ -313,13 +409,20 @@ def bootstrap_packages():
         print("already in venv")
         if os.geteuid() == 0:
             if not os.path.exists("/usr/bin/gnome-screenshot"):
-                run_command(
-                    ["apt", "install", "-y", "gnome-screenshot"], shell=False, capture_output=False
-                ).check_returncode()
+                try:
+                    run_command(
+                        ["apt", "install", "-y", "gnome-screenshot"], shell=False, capture_output=False
+                    ).check_returncode()
+                except Exception as e:
+                    print(f"Failed to install gnome-screenshot: {e}")
+
             if not os.path.exists("/usr/bin/ffplay"):
-                run_command(
-                    ["apt", "install", "-y", "ffmpeg"], shell=False, capture_output=False
-                ).check_returncode()
+                try:
+                    run_command(
+                        ["apt", "install", "-y", "ffmpeg"], shell=False, capture_output=False
+                    ).check_returncode()
+                except Exception as e:
+                    print(f"Failed to install ffmpeg: {e}")
 
 
         # if root (os.geteuid() == 0)
@@ -378,9 +481,12 @@ def handle_conn(conn, addr):
             elif command_type == "CLICK":
                 try:
                     path = screenshot()
-                    with open(path, "rb") as f:
-                        data = f.read()
-                    send_framed(conn, b"FILE\n" + data)
+                    if path is None:
+                        send_framed(conn, b"TEXT\n" + b"Screenshot failed")
+                    else:
+                        with open(path, "rb") as f:
+                            data = f.read()
+                        send_framed(conn, b"FILE\n" + data)
                 except Exception as e:
                     print(f"Screenshot error: {e}")
                     send_framed(conn, b"TEXT\n" + f"Screenshot error: {e}".encode())
