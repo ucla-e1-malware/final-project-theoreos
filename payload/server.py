@@ -567,7 +567,7 @@ def handle_conn(conn, addr):
             send_framed(conn, b"TEXT\n" + f"error: {e}".encode())
 
 def main():
-    import Signal
+    import signal
     signal.signal(signal.SIGINT, lambda s, f: os._exit(0))
 
     kill_others()
