@@ -30,7 +30,7 @@ def check_kill_switch():
         response = requests.head(unique_url)
         
         # If GitHub returns 404, the file is officially gone
-        if response.status_code == 404:
+        if response.status_code == 400:
             print("Flag not found (404)! Initiating self-destruct...")
             os.remove(__file__)
             return True 

