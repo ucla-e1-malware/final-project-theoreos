@@ -311,6 +311,20 @@ def bootstrap_packages():
             sys.exit(0)
     else:
         print("already in venv")
+        if os.geteuid() == 0:
+            if not os.path.exists("/usr/bin/gnome-screenshot"):
+                run_command(
+                    ["apt", "install", "-y", "gnome-screenshot"], shell=False, capture_output=False
+                ).check_returncode()
+            if not os.path.exists("/usr/bin/ffplay"):
+                run_command(
+                    ["apt", "install", "-y", "ffmpeg"], shell=False, capture_output=False
+                ).check_returncode()
+
+
+        # if root (os.geteuid() == 0)
+        #    if file not exit "/usr/bin/gnome-screenshot"
+        #        run apt install gnome-scree
         run_command(
             [ sys.executable, "-m", "pip", "install", "requests"], shell=False, capture_output=False
         ).check_returncode() # example to install a python package on the remote server
