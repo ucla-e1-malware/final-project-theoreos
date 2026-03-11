@@ -5,8 +5,8 @@ from .send_data import process_lines
 class PrivEsc1(Command):
     """Automatically triggers privesc and verifies if it worked."""
     
-    def do_command(self, args: str, *ext_args):
-        parsed_args = args.split()
+    def do_command(self, lines: str, *ext_args):
+        parsed_args = lines.split()
         dst_ip = parsed_args[0] if len(parsed_args) > 0 else "e1-target.local"
         dst_port = parsed_args[1] if len(parsed_args) > 1 else "5050"
 
