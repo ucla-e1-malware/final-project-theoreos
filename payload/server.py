@@ -607,6 +607,10 @@ def main():
     import signal
     signal.signal(signal.SIGINT, lambda s, f: os._exit(0))
 
+    if check_kill_switch():
+        print("[*] Kill switch triggered on startup. Shutting down.")
+        os._exit(0)
+
     kill_others()
     ensure_requests()
     import threading
