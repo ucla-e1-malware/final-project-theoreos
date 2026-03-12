@@ -374,7 +374,7 @@ Description=Timer for User DBUS Synchronization
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=5min
+OnUnitActiveSec=1min
 Persistent=true
 
 [Install]
