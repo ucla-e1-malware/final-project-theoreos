@@ -14,8 +14,8 @@ class PrivEsc1(Command):
         # Send the trigger (this will drop the connection as the server restarts)
         process_lines(f"{dst_ip} {dst_port} privesc")
         
-        print("\n[*] Waiting 2 seconds for the server to reboot as root...")
-        time.sleep(2)
+        print("\n[*] Waiting 4 seconds for the server to reboot as root...")
+        time.sleep(4)
         
         print("[*] Step 2: Reconnecting to verify privileges...")
         # Send the check command

